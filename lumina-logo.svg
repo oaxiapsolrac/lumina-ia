@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="strokeGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="60%" stop-color="#FF4081"/>
+      <stop offset="100%" stop-color="#6A1B9A"/>
+    </linearGradient>
+    <radialGradient id="burst" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="45%" stop-color="#FF74B8"/>
+      <stop offset="85%" stop-color="#6A1B9A"/>
+      <stop offset="100%" stop-color="rgba(106,27,154,0)"/>
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="strongGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="12" result="b1"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <g id="rayLong">
+      <line x1="256" y1="256" x2="256" y2="76"/>
+    </g>
+    <g id="rayShort">
+      <line x1="256" y1="256" x2="256" y2="136"/>
+    </g>
+  </defs>
+
+  
+
+  <g stroke="url(#strokeGrad)" stroke-width="20" stroke-linecap="round" filter="url(#softGlow)">
+    <use href="#rayLong" transform="rotate(0 256 256)"/>
+    <use href="#rayLong" transform="rotate(30 256 256)"/>
+    <use href="#rayLong" transform="rotate(60 256 256)"/>
+    <use href="#rayLong" transform="rotate(90 256 256)"/>
+    <use href="#rayLong" transform="rotate(120 256 256)"/>
+    <use href="#rayLong" transform="rotate(150 256 256)"/>
+    <use href="#rayLong" transform="rotate(180 256 256)"/>
+    <use href="#rayLong" transform="rotate(210 256 256)"/>
+    <use href="#rayLong" transform="rotate(240 256 256)"/>
+    <use href="#rayLong" transform="rotate(270 256 256)"/>
+    <use href="#rayLong" transform="rotate(300 256 256)"/>
+    <use href="#rayLong" transform="rotate(330 256 256)"/>
+  </g>
+
+  <g stroke="url(#strokeGrad)" stroke-width="12" stroke-linecap="round" filter="url(#softGlow)">
+    <use href="#rayShort" transform="rotate(15 256 256)"/>
+    <use href="#rayShort" transform="rotate(45 256 256)"/>
+    <use href="#rayShort" transform="rotate(75 256 256)"/>
+    <use href="#rayShort" transform="rotate(105 256 256)"/>
+    <use href="#rayShort" transform="rotate(135 256 256)"/>
+    <use href="#rayShort" transform="rotate(165 256 256)"/>
+    <use href="#rayShort" transform="rotate(195 256 256)"/>
+    <use href="#rayShort" transform="rotate(225 256 256)"/>
+    <use href="#rayShort" transform="rotate(255 256 256)"/>
+    <use href="#rayShort" transform="rotate(285 256 256)"/>
+    <use href="#rayShort" transform="rotate(315 256 256)"/>
+    <use href="#rayShort" transform="rotate(345 256 256)"/>
+  </g>
+
+  <circle cx="256" cy="256" r="40" fill="url(#burst)" filter="url(#strongGlow)"/>
+</svg>

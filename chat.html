@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lumina • Chat</title>
+  <style>
+    :root {
+      --bg: #FFFFFF;
+      --text: #1F1F1F;
+      --muted: #606060;
+      --border: #E6E6E6;
+      --primary-a: #6A1B9A;
+      --primary-b: #FF4081;
+      --surface: #FAFAFA;
+      --radius: 16px;
+      --max-w: 860px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .header-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+    }
+    .logo, .logo-img {
+      width: 36px;
+      height: 36px;
+    }
+    .brand {
+      font-weight: 900;
+      letter-spacing: 0.5px;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 280px;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      padding-top: 60px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .new-chat {
+      margin: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #FFF;
+      cursor: pointer;
+    }
+    .history {
+      list-style: none;
+      padding: 0;
+      margin: 6px 8px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .history-item {
+      border-radius: 8px;
+      padding: 10px 10px;
+      margin: 4px 8px;
+      border: 1px solid var(--border);
+      background: #FFF;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .history-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .delete-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .delete-btn:hover { background: #F5F5F5; color: #D32F2F; }
+    main { flex: 1; }
+    .content {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 32px 20px 108px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-left: 280px;
+    }
+    .message {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-start;
+      width: 100%;
+    }
+    .message .bubble { max-width: 75%; }
+    .message.from-user { flex-direction: row-reverse; justify-content: flex-end; }
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
+      flex-shrink: 0;
+    }
+    .bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      line-height: 1.6;
+    }
+    .typing { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #BDBDBD; animation: dots 1s ease-in-out infinite; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
+    .from-user .avatar { background: #D1D5DB; }
+    .from-user .bubble { background: #FFFFFF; text-align: right; margin-left: auto; }
+    .hint {
+      text-align: center;
+      color: var(--muted);
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    .composer {
+      position: fixed;
+      left: 280px; right: 0; bottom: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+    .composer-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+    }
+    .input {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 12px 16px;
+      font-size: 16px;
+      background: #FFFFFF;
+      outline: none;
+    }
+    .input:focus { border-color: #CFCFCF; }
+    .send {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
+      color: #FFFFFF;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .send:disabled { opacity: 0.5; cursor: default; }
+    @keyframes dots { 0% { opacity: 0.2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } 100% { opacity: 0.2; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <img class="logo-img" src="lumina-logo.svg" alt="LUMINA" onerror="this.src='lumina-logo.svg'"/>
+      <div class="brand">LUMINA</div>
+    </div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      <div class="sidebar-header">Histórico</div>
+      <button id="newChat" class="new-chat">Novo chat</button>
+      <ul id="history" class="history"></ul>
+    </aside>
+    <div class="content">
+      <div class="message">
+        <div class="avatar"></div>
+        <div class="bubble">Olá! Sou a LUMINA. Como posso ajudar hoje?</div>
+      </div>
+      <div class="hint">Inicie o seu diálogo!</div>
+    </div>
+  </main>
+  <div class="composer">
+    <div class="composer-inner">
+      <input id="prompt" class="input" type="text" placeholder="Pergunte qualquer coisa..." autocomplete="off"/>
+      <button id="send" class="send" disabled>Enviar</button>
+    </div>
+  </div>
+<script>
+    const input = document.getElementById('prompt');
+    const send = document.getElementById('send');
+    const historyEl = document.getElementById('history');
+    const newChatBtn = document.getElementById('newChat');
+    let currentConversationId = null;
+
+    // --- FUNÇÕES DE HISTÓRICO (Mantidas iguais ao seu original) ---
+    function loadHistory() {
+      const raw = localStorage.getItem('wd-history');
+      const list = raw ? JSON.parse(raw) : [];
+      historyEl.innerHTML = '';
+      list.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+        li.dataset.id = item.id;
+        const title = document.createElement('span');
+        title.className = 'title';
+        title.textContent = item.title || 'Sem título';
+        const del = document.createElement('button');
+        del.className = 'delete-btn';
+        del.setAttribute('aria-label', 'Excluir conversa');
+        del.textContent = '×';
+        li.appendChild(title);
+        li.appendChild(del);
+        li.addEventListener('click', () => loadConversation(item.id));
+        del.addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(item.id); });
+        historyEl.appendChild(li);
+      });
+    }
+
+    function saveHistory(history) {
+      localStorage.setItem('wd-history', JSON.stringify(history));
+    }
+
+    function getHistory() {
+      const raw = localStorage.getItem('wd-history');
+      return raw ? JSON.parse(raw) : [];
+    }
+
+    function deleteConversation(id) {
+      let history = getHistory();
+      history = history.filter(h => h.id !== id);
+      saveHistory(history);
+      if (currentConversationId === id) {
+        currentConversationId = null;
+        renderAssistantGreeting();
+      }
+      loadHistory();
+    }
+
+    function renderAssistantGreeting() {
+      const content = document.querySelector('.content');
+      content.innerHTML = '';
+      const msg = document.createElement('div');
+      msg.className = 'message';
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      // Mudei o texto para combinar com seu tema novo
+      bubble.textContent = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.textContent = 'Inicie o seu diálogo!';
+      content.appendChild(hint);
+    }
+
+    function loadConversation(id) {
+      const history = getHistory();
+      const conv = history.find(h => h.id === id);
+      if (!conv) return;
+      currentConversationId = id;
+      const content = document.querySelector('.content');
+      content.innerHTML = '';
+      conv.messages.forEach(m => {
+        const msg = document.createElement('div');
+        msg.className = 'message' + (m.role === 'user' ? ' from-user' : '');
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.textContent = m.text;
+        msg.appendChild(avatar);
+        msg.appendChild(bubble);
+        content.appendChild(msg);
+      });
+    }
+
+    function startNewConversation() {
+      currentConversationId = null;
+      renderAssistantGreeting();
+    }
+
+    input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
+
+    function appendMessage(role, text) {
+      const content = document.querySelector('.content');
+      const msg = document.createElement('div');
+      msg.className = 'message' + (role === 'user' ? ' from-user' : '');
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    function appendTyping() {
+      const content = document.querySelector('.content');
+      const msg = document.createElement('div');
+      msg.className = 'message';
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble typing';
+      const d1 = document.createElement('span');
+      d1.className = 'dot';
+      const d2 = document.createElement('span');
+      d2.className = 'dot';
+      const d3 = document.createElement('span');
+      d3.className = 'dot';
+      bubble.appendChild(d1);
+      bubble.appendChild(d2);
+      bubble.appendChild(d3);
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
+      window.scrollTo(0, document.body.scrollHeight);
+      return msg;
+    }
+
+    // --- AQUI É A PARTE NOVA QUE CONECTA COM O GEMINI ---
+    send.addEventListener('click', async () => {
+      const text = input.value.trim();
+      if (!text) return;
+
+      // 1. Mostra a mensagem do usuário
+      appendMessage('user', text);
+      
+      // Salva no histórico (User)
+      let history = getHistory();
+      if (!currentConversationId) {
+        currentConversationId = Date.now().toString();
+        history.unshift({ id: currentConversationId, title: text.slice(0, 40), messages: [] });
+      }
+      const idx = history.findIndex(h => h.id === currentConversationId);
+      if (idx !== -1) {
+        history[idx].messages.push({ role: 'user', text });
+        saveHistory(history);
+        loadHistory();
+      }
+
+      input.value = '';
+      send.disabled = true;
+
+      // 2. Animação de "digitando"
+      const typingEl = appendTyping();
+
+      try {
+        // 3. CONEXÃO COM O SERVIDOR (BACKEND)
+        // Aqui ele vai bater na porta 3000 onde o Gemini está esperando
+        const response = await fetch('http://localhost:3000/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensagem: text })
+        });
+
+        const data = await response.json();
+        
+        // Remove a animação
+        typingEl.remove();
+        
+        const reply = data.resposta; // Texto que veio do Gemini
+
+        // 4. Mostra a resposta da IA
+        appendMessage('assistant', reply);
+
+        // Salva no histórico (IA)
+        let h = getHistory();
+        const i = h.findIndex(v => v.id === currentConversationId);
+        if (i !== -1) {
+          h[i].messages.push({ role: 'assistant', text: reply });
+          saveHistory(h);
+        }
+
+      } catch (error) {
+        typingEl.remove();
+        console.error(error);
+        appendMessage('assistant', "Erro: Verifique se o arquivo 'server.js' está rodando no terminal.");
+      }
+    });
+
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
+
+    newChatBtn.addEventListener('click', startNewConversation);
+    loadHistory();
+  </script>
+</body>
+</html>
