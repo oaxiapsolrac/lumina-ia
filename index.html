@@ -10,13 +10,12 @@
   <style>
     /* --- CSS ORIGINAL DO DESIGN --- */
     :root {
-      --bg: #d297cc;
-      --text: #1F1F1F;
-      --muted: #606060;
-      --border: #E6E6E6;
-      --primary-a: #6A1B9A;
-      --primary-b: #FF4081;
-      --surface: #da3cad;
+      --bg: #ffffff;
+      --text: #060606;
+      --border: #E6E6E6; /* cor das cordas */
+      --primary-a: #b732b3;
+      --primary-b: #ba49b0;
+      --surface: #f7f7f7;
       --radius: 16px;
       --max-w: 860px;
     }
@@ -34,7 +33,7 @@
       top: 0;
       background: var(--bg);
       border-bottom: 1px solid var(--border);
-      z-index: 10;
+      z-index: 1;
     }
     .header-inner {
       max-width: var(--max-w);
@@ -44,50 +43,50 @@
       gap: 12px;
       padding: 14px 20px;
     }
-    .logo, .logo-img { width: 36px; height: 36px; }
-    .brand { font-weight: 900; letter-spacing: 0.5px; }
+    .logo, .logo-img { width: 45px; height: 45px; }
+    .brand { font-weight: 900; letter-spacing: 6px; }
     .sidebar {
       position: fixed;
       top: 0; left: 0; bottom: 0;
-      width: 280px;
+      width: 290px; /* largura do campo de historico de conversa */
       background: var(--bg);
       border-right: 1px solid var(--border);
-      padding-top: 60px;
+      padding-top: 80px;
       display: flex;
       flex-direction: column;
     }
     .sidebar-header {
-      padding: 14px 16px;
+      padding: 10px 110px;
       border-bottom: 1px solid var(--border);
-      font-weight: 600;
+      font-weight: 690;
     }
     .new-chat {
-      margin: 12px 16px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      background: #FFF;
-      cursor: pointer;
+      margin: 12px 16px; /* margem externa */
+      border: 1px solid var(--border); /* cor da borda */
+      border-radius: 8px; /* arredondamento da borda */
+      padding: 10px 12px; /* espaçamento interno */
+      background: #FFF; /* cor de fundo */
+      cursor: pointer; /* cursor de ponteiro ao passar sobre */
     }
     .history {
       list-style: none;
-      padding: 0;
-      margin: 6px 8px;
-      overflow-y: auto;
-      flex: 1;
+      padding: 0; /* remove o espaçamento interno */
+      margin: 6px 8px; /* margem externa */
+      overflow-y: auto; /* adiciona barra de rolagem vertical quando necessário */
+      flex: 1; /* ocupa o espaço restante na coluna */
     }
     .history-item {
       border-radius: 8px;
-      padding: 10px 10px;
-      margin: 4px 8px;
-      border: 1px solid var(--border);
+      padding: 10px 10px; /* espaçamento interno */
+      margin: 4px 8px; /* margem externa */
+      border: 1px solid var(--border); /* cor da borda */
       background: #FFF;
       cursor: pointer;
       color: var(--text);
-      font-size: 14px;
+      font-size: 14px; /* tamanho da fonte */
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px; /* espaçamento entre os itens */
       justify-content: space-between;
     }
     .history-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -95,27 +94,27 @@
       border: none;
       background: transparent;
       color: var(--muted);
-      font-size: 16px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      cursor: pointer;
+      font-size: 14px; /* tamanho da fonte */
+      padding: 4px 8px; /* espaçamento interno */
+      border-radius: 6px; /* arredondamento da borda */
+      cursor: pointer; /* cursor de ponteiro ao passar sobre */
     }
     .delete-btn:hover { background: #F5F5F5; color: #D32F2F; }
     main { flex: 1; }
     .content {
       max-width: var(--max-w);
-      margin: 0 auto;
-      padding: 32px 20px 108px;
+      margin: 0 auto; /* centraliza o conteúdo horizontalmente */
+      padding: 32px 20px 108px; /* espaçamento interno */
       display: flex;
       flex-direction: column;
-      gap: 18px;
-      margin-left: 280px;
+      gap: 18px; /* espaçamento entre os itens */
+      margin-left: 280px; /* margem externa à esquerda */
     }
     .message {
       display: flex;
-      gap: 12px;
+      gap: 12px; /* espaçamento entre os itens */
       justify-content: flex-start;
-      width: 100%;
+      width: 100%; /* ocupa toda a largura disponível */
     }
     .message .bubble { max-width: 75%; }
     .message.from-user { flex-direction: row-reverse; justify-content: flex-end; }
@@ -137,8 +136,8 @@
     .from-user .bubble { background: #FFFFFF; text-align: right; margin-left: auto; }
     
     /* --- CSS NOVO: FORMATAÇÃO DA RESPOSTA (MARKDOWN) --- */
-    .bubble p { margin: 0 0 10px 0; }
-    .bubble p:last-child { margin: 0; }
+    .bubble p { margin: 0 0 10px 0; } /* espaçamento entre os parágrafos */
+    .bubble p:last-child { margin: 0; } /* remove o espaçamento inferior do último parágrafo */
     /* Listas organizadas */
     .bubble ul, .bubble ol { margin: 5px 0 5px 20px; padding: 0; }
     .bubble li { margin-bottom: 5px; }
@@ -146,46 +145,87 @@
     .bubble strong, .bubble b { font-weight: 700; color: var(--primary-a); }
     
     /* --- RESTO DO DESIGN --- */
-    .hint {
-      text-align: center;
-      color: var(--muted);
-      margin-top: 8px;
-      font-size: 14px;
-    }
+    
+    /* --- BARRA DE DIGITAÇÃO ESTILO GEMINI --- */
+    
+    /* O container invisível que posiciona a barra */
     .composer {
       position: fixed;
-      left: 280px; right: 0; bottom: 0;
-      background: var(--bg);
-      border-top: 1px solid var(--border);
+      bottom: 24px; /* Flutua um pouco acima do fundo */
+      left: 50%; /* Centraliza na tela */
+      transform: translateX(-50%); /* Ajuste exato do centro */
+      width: 100%;
+      max-width: 750px; /* Largura máxima parecida com o Gemini */
+      padding: 0 20px;
+      background: transparent;
+      border: none;
+      z-index: 100; /* Garante que fique acima de tudo */
     }
+
+    /* A barra escura arredondada em si */
     .composer-inner {
-      max-width: var(--max-w);
-      margin: 0 auto;
+      background: #1E1F20; /* Cor escura do Gemini */
+      border-radius: 36px; /* Bordas bem redondas */
+      padding: 8px 12px 8px 24px; /* Espaçamento interno */
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 14px 20px;
+      gap: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2); /* Sombra suave */
+      border: 1px solid #333; /* Borda sutil */
     }
+
+    /* O campo onde escreve */
     .input {
       flex: 1;
-      border: 1px solid var(--border);
-      border-radius: 28px;
-      padding: 12px 16px;
-      font-size: 16px;
-      background: #FFFFFF;
-      outline: none;
-    }
-    .input:focus { border-color: #CFCFCF; }
-    .send {
+      background: transparent;
       border: none;
-      border-radius: 999px;
-      padding: 10px 16px;
-      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
-      color: #FFFFFF;
-      font-weight: 600;
-      cursor: pointer;
+      color: #E3E3E3; /* Texto claro */
+      font-size: 16px;
+      outline: none;
+      padding: 10px 0;
     }
-    .send:disabled { opacity: 0.5; cursor: default; }
+
+    /* Cor do texto de "Digite aqui..." */
+    .input::placeholder {
+      color: #8E918F; 
+    }
+
+    /* Botão de Enviar */
+    button#send {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: var(--primary-a); /* Mantém sua cor roxa da marca */
+      /* Se quiser igual ao Gemini (seta branca), use: background: #FFF; color: #000; */
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    button#send:hover {
+      filter: brightness(1.2);
+    }
+    
+    button#send:disabled {
+      background: #a13d9c;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    /* Ajuste para telas pequenas (Celular) */
+    @media (max-width: 768px) {
+      .composer {
+        left: 0;
+        transform: none;
+        max-width: 100%;
+        bottom: 10px;
+      }
+    }
     .typing { display: inline-flex; align-items: center; gap: 6px; }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: #BDBDBD; animation: dots 1s ease-in-out infinite; }
     .dot:nth-child(2) { animation-delay: 0.15s; }
@@ -295,10 +335,7 @@
       msg.appendChild(bubble);
       content.appendChild(msg);
       
-      const hint = document.createElement('div');
-      hint.className = 'hint';
-      hint.textContent = 'Inicie o seu diálogo!';
-      content.appendChild(hint);
+      
     }
 
     function loadConversation(id) {
