@@ -8,214 +8,442 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
   <style>
-    :root { --bg: #FFFFFF; --text: #1F1F1F; --primary-a: #6A1B9A; --primary-b: #FF4081; --surface: #FAFAFA; --radius: 16px; --max-w: 860px; --border: #E6E6E6; }
+    /* --- CSS ORIGINAL DO DESIGN --- */
+    :root {
+      --bg: #FFFFFF;
+      --text: #1F1F1F;
+      --muted: #606060;
+      --border: #E6E6E6;
+      --primary-a: #6A1B9A;
+      --primary-b: #FF4081;
+      --surface: #FAFAFA;
+      --radius: 16px;
+      --max-w: 860px;
+    }
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; background: var(--bg); font-family: sans-serif; display: flex; flex-direction: column; }
+    html, body { height: 100%; background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .header-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+    }
+    .logo, .logo-img { width: 36px; height: 36px; }
+    .brand { font-weight: 900; letter-spacing: 0.5px; }
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 280px;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      padding-top: 60px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .new-chat {
+      margin: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #FFF;
+      cursor: pointer;
+    }
+    .history {
+      list-style: none;
+      padding: 0;
+      margin: 6px 8px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .history-item {
+      border-radius: 8px;
+      padding: 10px 10px;
+      margin: 4px 8px;
+      border: 1px solid var(--border);
+      background: #FFF;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .history-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .delete-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .delete-btn:hover { background: #F5F5F5; color: #D32F2F; }
+    main { flex: 1; }
+    .content {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 32px 20px 108px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-left: 280px;
+    }
+    .message {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-start;
+      width: 100%;
+    }
+    .message .bubble { max-width: 75%; }
+    .message.from-user { flex-direction: row-reverse; justify-content: flex-end; }
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
+      flex-shrink: 0;
+    }
+    .bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      line-height: 1.6;
+    }
+    .from-user .avatar { background: #D1D5DB; }
+    .from-user .bubble { background: #FFFFFF; text-align: right; margin-left: auto; }
     
-    /* Layout */
-    .content { max-width: var(--max-w); margin: 0 auto; padding: 32px 20px 108px; margin-left: 280px; flex: 1; display: flex; flex-direction: column; gap: 18px; }
-    .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; border-right: 1px solid var(--border); padding: 20px; background: #fff; z-index: 100;}
-    .composer { position: fixed; left: 280px; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--border); padding: 20px; }
-    .composer-inner { max-width: var(--max-w); margin: 0 auto; display: flex; gap: 10px; }
-    
-    /* Balões de mensagem */
-    .message { display: flex; gap: 12px; width: 100%; }
-    .message.from-user { flex-direction: row-reverse; }
-    .avatar { width: 30px; height: 30px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
-    .message.from-user .avatar { background: #666; }
-    .message:not(.from-user) .avatar { background: linear-gradient(135deg, var(--primary-a), var(--primary-b)); }
-    
-    .bubble { background: var(--surface); border: 1px solid var(--border); padding: 14px 18px; border-radius: 16px; line-height: 1.6; max-width: 80%; }
-    .message.from-user .bubble { background: #fff; text-align: right; }
-
-    /* 2. IMPORTANTE: ESTILO DO NEGRITO E LISTAS */
-    .bubble strong { font-weight: 900; color: var(--primary-a); }
-    .bubble ul, .bubble ol { margin: 10px 0 10px 20px; padding: 0; }
-    .bubble li { margin-bottom: 5px; }
+    /* --- CSS NOVO: FORMATAÇÃO DA RESPOSTA (MARKDOWN) --- */
     .bubble p { margin: 0 0 10px 0; }
     .bubble p:last-child { margin: 0; }
-
-    /* Inputs e Botões */
-    input { flex: 1; padding: 12px 20px; border-radius: 30px; border: 1px solid var(--border); outline: none; font-size: 16px; }
-    button#send { padding: 10px 20px; border-radius: 30px; border: none; background: var(--primary-a); color: white; font-weight: bold; cursor: pointer; }
-    button#send:disabled { opacity: 0.5; }
+    /* Listas organizadas */
+    .bubble ul, .bubble ol { margin: 5px 0 5px 20px; padding: 0; }
+    .bubble li { margin-bottom: 5px; }
+    /* Negrito com a cor da marca */
+    .bubble strong, .bubble b { font-weight: 700; color: var(--primary-a); }
     
-    /* Histórico */
-    .history-list { list-style: none; padding: 0; margin-top: 20px; }
-    .history-item { padding: 10px; margin-bottom: 5px; background: #f5f5f5; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; }
-    .delete-btn { background: none; border: none; color: red; cursor: pointer; font-weight: bold; }
+    /* --- RESTO DO DESIGN --- */
+    .hint {
+      text-align: center;
+      color: var(--muted);
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    .composer {
+      position: fixed;
+      left: 280px; right: 0; bottom: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+    .composer-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+    }
+    .input {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 12px 16px;
+      font-size: 16px;
+      background: #FFFFFF;
+      outline: none;
+    }
+    .input:focus { border-color: #CFCFCF; }
+    .send {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
+      color: #FFFFFF;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .send:disabled { opacity: 0.5; cursor: default; }
+    .typing { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #BDBDBD; animation: dots 1s ease-in-out infinite; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes dots { 0% { opacity: 0.2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } 100% { opacity: 0.2; transform: translateY(0); } }
   </style>
 </head>
 <body>
-
-  <aside class="sidebar">
-    <h3>Histórico</h3>
-    <button onclick="startNewChat()" style="width:100%; padding:10px; cursor:pointer;">+ Novo Chat</button>
-    <ul id="history" class="history-list"></ul>
-  </aside>
-
-  <main class="content" id="chat-content">
-    </main>
-
+  <header>
+    <div class="header-inner">
+      <img class="logo-img" src="lumina-logo.svg" alt="LUMINA" onerror="this.src='lumina-logo.svg'"/>
+      <div class="brand">LUMINA</div>
+    </div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      <div class="sidebar-header">Histórico</div>
+      <button id="newChat" class="new-chat">Novo chat</button>
+      <ul id="history" class="history"></ul>
+    </aside>
+    <div class="content">
+      </div>
+  </main>
   <div class="composer">
     <div class="composer-inner">
-      <input type="text" id="prompt" placeholder="Digite sua pergunta..." autocomplete="off">
-      <button id="send">Enviar</button>
+      <input id="prompt" class="input" type="text" placeholder="Pergunte sobre mulheres na tech..." autocomplete="off"/>
+      <button id="send" class="send" disabled>Enviar</button>
     </div>
   </div>
 
-  <script>
-    const chatContent = document.getElementById('chat-content');
+<script>
     const input = document.getElementById('prompt');
-    const sendBtn = document.getElementById('send');
-    const historyList = document.getElementById('history');
-    let currentId = null;
+    const send = document.getElementById('send');
+    const historyEl = document.getElementById('history');
+    const newChatBtn = document.getElementById('newChat');
+    let currentConversationId = null;
 
-    // --- FUNÇÕES DE EXIBIÇÃO ---
-    
-    function appendMessage(role, text) {
-      const div = document.createElement('div');
-      div.className = 'message ' + (role === 'user' ? 'from-user' : 'from-ai');
+    // --- 1. GERENCIAMENTO DE HISTÓRICO ---
+    function loadHistory() {
+      const raw = localStorage.getItem('wd-history');
+      const list = raw ? JSON.parse(raw) : [];
+      historyEl.innerHTML = '';
+      list.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+        li.dataset.id = item.id;
+        
+        const title = document.createElement('span');
+        title.className = 'title';
+        title.textContent = item.title || 'Sem título';
+        
+        // Botão de excluir
+        const del = document.createElement('button');
+        del.className = 'delete-btn';
+        del.setAttribute('aria-label', 'Excluir conversa');
+        del.textContent = '×';
+        
+        li.appendChild(title);
+        li.appendChild(del);
+        
+        // Eventos de clique
+        li.addEventListener('click', () => loadConversation(item.id));
+        del.addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(item.id); });
+        
+        historyEl.appendChild(li);
+      });
+    }
+
+    function saveHistory(history) {
+      localStorage.setItem('wd-history', JSON.stringify(history));
+    }
+
+    function getHistory() {
+      const raw = localStorage.getItem('wd-history');
+      return raw ? JSON.parse(raw) : [];
+    }
+
+    function deleteConversation(id) {
+      let history = getHistory();
+      history = history.filter(h => h.id !== id); // Remove a conversa
+      saveHistory(history);
+      
+      // Se estava vendo a conversa apagada, limpa a tela
+      if (currentConversationId === id) {
+        currentConversationId = null;
+        renderAssistantGreeting();
+      }
+      loadHistory(); // Atualiza a lista lateral
+    }
+
+    // --- 2. INTERFACE E MENSAGENS ---
+    function renderAssistantGreeting() {
+      const content = document.querySelector('.content');
+      content.innerHTML = '';
+      
+      const msg = document.createElement('div');
+      msg.className = 'message';
       
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
       
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
+      bubble.textContent = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
+      
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
+      
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.textContent = 'Inicie o seu diálogo!';
+      content.appendChild(hint);
+    }
 
-      // 3. IMPORTANTE: AQUI APLICAMOS A FORMATAÇÃO
+    function loadConversation(id) {
+      const history = getHistory();
+      const conv = history.find(h => h.id === id);
+      if (!conv) return;
+      currentConversationId = id;
+      const content = document.querySelector('.content');
+      content.innerHTML = '';
+      
+      conv.messages.forEach(m => {
+        const msg = document.createElement('div');
+        msg.className = 'message' + (m.role === 'user' ? ' from-user' : '');
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+
+        // FORMATAÇÃO DO HISTÓRICO
+        if (m.role === 'user') {
+          bubble.textContent = m.text;
+        } else {
+          bubble.innerHTML = marked.parse(m.text);
+        }
+
+        msg.appendChild(avatar);
+        msg.appendChild(bubble);
+        content.appendChild(msg);
+      });
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    function startNewConversation() {
+      currentConversationId = null;
+      renderAssistantGreeting();
+    }
+
+    function appendMessage(role, text) {
+      const content = document.querySelector('.content');
+      const msg = document.createElement('div');
+      msg.className = 'message' + (role === 'user' ? ' from-user' : '');
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+
+      // FORMATAÇÃO DE MENSAGENS NOVAS
       if (role === 'user') {
         bubble.textContent = text;
       } else {
-        // Se for IA, converte Markdown (*negrito*) para HTML (<b>negrito</b>)
-        bubble.innerHTML = marked.parse(text);
+        bubble.innerHTML = marked.parse(text); // Transforma Markdown em HTML
       }
 
-      div.appendChild(avatar);
-      div.appendChild(bubble);
-      chatContent.appendChild(div);
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
       window.scrollTo(0, document.body.scrollHeight);
     }
 
-    function showTyping() {
-      const div = document.createElement('div');
-      div.id = 'typing-indicator';
-      div.className = 'message';
-      div.innerHTML = '<div class="avatar"></div><div class="bubble">...</div>';
-      chatContent.appendChild(div);
+    function appendTyping() {
+      const content = document.querySelector('.content');
+      const msg = document.createElement('div');
+      msg.className = 'message';
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble typing';
+      
+      const d1 = document.createElement('span'); d1.className = 'dot';
+      const d2 = document.createElement('span'); d2.className = 'dot';
+      const d3 = document.createElement('span'); d3.className = 'dot';
+      
+      bubble.appendChild(d1); bubble.appendChild(d2); bubble.appendChild(d3);
+      msg.appendChild(avatar);
+      msg.appendChild(bubble);
+      content.appendChild(msg);
       window.scrollTo(0, document.body.scrollHeight);
+      return msg;
     }
 
-    function removeTyping() {
-      const el = document.getElementById('typing-indicator');
-      if (el) el.remove();
-    }
+    // --- 3. CONEXÃO COM O BACKEND (RENDER) ---
+    input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
+    newChatBtn.addEventListener('click', startNewConversation);
 
-    // --- HISTÓRICO ---
-    function getHistory() { return JSON.parse(localStorage.getItem('lumina-chats') || '[]'); }
-    function saveHistory(data) { localStorage.setItem('lumina-chats', JSON.stringify(data)); }
-
-    function updateHistoryUI() {
-      const chats = getHistory();
-      historyList.innerHTML = '';
-      chats.forEach(chat => {
-        const li = document.createElement('li');
-        li.className = 'history-item';
-        li.innerHTML = `<span>${chat.title}</span>`;
-        
-        const del = document.createElement('button');
-        del.className = 'delete-btn';
-        del.innerText = '×';
-        del.onclick = (e) => { e.stopPropagation(); deleteChat(chat.id); };
-        
-        li.onclick = () => loadChat(chat.id);
-        li.appendChild(del);
-        historyList.appendChild(li);
-      });
-    }
-
-    function deleteChat(id) {
-      const chats = getHistory().filter(c => c.id !== id);
-      saveHistory(chats);
-      if (currentId === id) startNewChat();
-      updateHistoryUI();
-    }
-
-    function loadChat(id) {
-      currentId = id;
-      chatContent.innerHTML = '';
-      const chat = getHistory().find(c => c.id === id);
-      if (chat) {
-        chat.messages.forEach(m => appendMessage(m.role, m.text));
-      }
-    }
-
-    function startNewChat() {
-      currentId = null;
-      chatContent.innerHTML = '';
-      appendMessage('ai', 'Olá! Sou a Lumina v2. Pergunte sobre mulheres na tecnologia!');
-    }
-
-    // --- ENVIO ---
-    sendBtn.onclick = async () => {
+    send.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
 
-      // 1. Mostra pergunta
       appendMessage('user', text);
-      input.value = '';
       
-      // 2. Salva no histórico
-      let chats = getHistory();
-      if (!currentId) {
-        currentId = Date.now().toString();
-        chats.unshift({ id: currentId, title: text.slice(0, 20), messages: [] });
+      // Salva ou cria conversa no histórico
+      let history = getHistory();
+      if (!currentConversationId) {
+        currentConversationId = Date.now().toString();
+        history.unshift({ id: currentConversationId, title: text.slice(0, 40), messages: [] });
       }
-      const chatIndex = chats.findIndex(c => c.id === currentId);
-      if (chatIndex !== -1) {
-        chats[chatIndex].messages.push({ role: 'user', text });
-        saveHistory(chats);
-        updateHistoryUI();
+      const idx = history.findIndex(h => h.id === currentConversationId);
+      if (idx !== -1) {
+        history[idx].messages.push({ role: 'user', text });
+        saveHistory(history);
+        loadHistory(); // Atualiza sidebar
       }
 
-      // 3. Envia para a API
-      showTyping();
+      input.value = '';
+      send.disabled = true;
+
+      const typingEl = appendTyping();
+
       try {
-        const req = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensagem: text })
+        // CONEXÃO OFICIAL COM SEU SERVIDOR NA NUVEM
+        const response = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensagem: text })
         });
-        const res = await req.json();
+
+        const data = await response.json();
         
-        removeTyping();
-        const reply = res.resposta;
+        typingEl.remove(); // Remove animação
+        
+        const reply = data.resposta;
 
-        // 4. Mostra resposta
-        appendMessage('ai', reply);
+        appendMessage('assistant', reply);
 
-        // 5. Salva resposta
-        chats = getHistory();
-        const idx = chats.findIndex(c => c.id === currentId);
-        if (idx !== -1) {
-          chats[idx].messages.push({ role: 'ai', text: reply });
-          saveHistory(chats);
+        // Salva resposta da IA no histórico
+        let h = getHistory();
+        const i = h.findIndex(v => v.id === currentConversationId);
+        if (i !== -1) {
+          h[i].messages.push({ role: 'assistant', text: reply });
+          saveHistory(h);
         }
 
-      } catch (err) {
-        removeTyping();
-        appendMessage('ai', 'Erro de conexão.');
+      } catch (error) {
+        typingEl.remove();
+        console.error(error);
+        appendMessage('assistant', "⚠️ Erro: Não foi possível conectar ao servidor.");
       }
-    };
-
-    // Enter para enviar
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') sendBtn.click();
     });
 
-    // Iniciar
-    updateHistoryUI();
-    startNewChat();
-  </script>
+    // Inicia o app
+    loadHistory();
+    renderAssistantGreeting();
+</script>
 </body>
 </html>
