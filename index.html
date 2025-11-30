@@ -4,13 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lumina • Chat</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
-    /* Adicione isso no final do seu CSS */
-    .bubble p { margin: 0 0 10px 0; }
-    .bubble p:last-child { margin: 0; }
-    .bubble ul, .bubble ol { margin: 5px 0 5px 20px; padding: 0; }
-    .bubble li { margin-bottom: 5px; }
-    .bubble strong { font-weight: 700; color: var(--primary-a); }
+    /* --- CSS ORIGINAL DO DESIGN --- */
     :root {
       --bg: #FFFFFF;
       --text: #1F1F1F;
@@ -27,7 +25,7 @@
     body {
       margin: 0;
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       display: flex;
       flex-direction: column;
     }
@@ -46,14 +44,8 @@
       gap: 12px;
       padding: 14px 20px;
     }
-    .logo, .logo-img {
-      width: 36px;
-      height: 36px;
-    }
-    .brand {
-      font-weight: 900;
-      letter-spacing: 0.5px;
-    }
+    .logo, .logo-img { width: 36px; height: 36px; }
+    .brand { font-weight: 900; letter-spacing: 0.5px; }
     .sidebar {
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -141,12 +133,19 @@
       padding: 14px 16px;
       line-height: 1.6;
     }
-    .typing { display: inline-flex; align-items: center; gap: 6px; }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: #BDBDBD; animation: dots 1s ease-in-out infinite; }
-    .dot:nth-child(2) { animation-delay: 0.15s; }
-    .dot:nth-child(3) { animation-delay: 0.3s; }
     .from-user .avatar { background: #D1D5DB; }
     .from-user .bubble { background: #FFFFFF; text-align: right; margin-left: auto; }
+    
+    /* --- CSS NOVO: FORMATAÇÃO DA RESPOSTA (MARKDOWN) --- */
+    .bubble p { margin: 0 0 10px 0; }
+    .bubble p:last-child { margin: 0; }
+    /* Listas organizadas */
+    .bubble ul, .bubble ol { margin: 5px 0 5px 20px; padding: 0; }
+    .bubble li { margin-bottom: 5px; }
+    /* Negrito com a cor da marca */
+    .bubble strong, .bubble b { font-weight: 700; color: var(--primary-a); }
+    
+    /* --- RESTO DO DESIGN --- */
     .hint {
       text-align: center;
       color: var(--muted);
@@ -187,9 +186,12 @@
       cursor: pointer;
     }
     .send:disabled { opacity: 0.5; cursor: default; }
+    .typing { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #BDBDBD; animation: dots 1s ease-in-out infinite; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
     @keyframes dots { 0% { opacity: 0.2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } 100% { opacity: 0.2; transform: translateY(0); } }
-  </style> 
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </style>
 </head>
 <body>
   <header>
@@ -205,19 +207,15 @@
       <ul id="history" class="history"></ul>
     </aside>
     <div class="content">
-      <div class="message">
-        <div class="avatar"></div>
-        <div class="bubble">Olá! Sou a LUMINA. Como posso ajudar hoje?</div>
       </div>
-      <div class="hint">Inicie o seu diálogo!</div>
-    </div>
   </main>
   <div class="composer">
     <div class="composer-inner">
-      <input id="prompt" class="input" type="text" placeholder="Pergunte qualquer coisa..." autocomplete="off"/>
+      <input id="prompt" class="input" type="text" placeholder="Pergunte sobre mulheres na tech..." autocomplete="off"/>
       <button id="send" class="send" disabled>Enviar</button>
     </div>
   </div>
+
 <script>
     const input = document.getElementById('prompt');
     const send = document.getElementById('send');
@@ -225,7 +223,7 @@
     const newChatBtn = document.getElementById('newChat');
     let currentConversationId = null;
 
-    // --- FUNÇÕES DE HISTÓRICO ---
+    // --- 1. GERENCIAMENTO DE HISTÓRICO ---
     function loadHistory() {
       const raw = localStorage.getItem('wd-history');
       const list = raw ? JSON.parse(raw) : [];
@@ -234,17 +232,24 @@
         const li = document.createElement('li');
         li.className = 'history-item';
         li.dataset.id = item.id;
+        
         const title = document.createElement('span');
         title.className = 'title';
         title.textContent = item.title || 'Sem título';
+        
+        // Botão de excluir
         const del = document.createElement('button');
         del.className = 'delete-btn';
         del.setAttribute('aria-label', 'Excluir conversa');
         del.textContent = '×';
+        
         li.appendChild(title);
         li.appendChild(del);
+        
+        // Eventos de clique
         li.addEventListener('click', () => loadConversation(item.id));
         del.addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(item.id); });
+        
         historyEl.appendChild(li);
       });
     }
@@ -260,35 +265,42 @@
 
     function deleteConversation(id) {
       let history = getHistory();
-      history = history.filter(h => h.id !== id);
+      history = history.filter(h => h.id !== id); // Remove a conversa
       saveHistory(history);
+      
+      // Se estava vendo a conversa apagada, limpa a tela
       if (currentConversationId === id) {
         currentConversationId = null;
         renderAssistantGreeting();
       }
-      loadHistory();
+      loadHistory(); // Atualiza a lista lateral
     }
 
+    // --- 2. INTERFACE E MENSAGENS ---
     function renderAssistantGreeting() {
       const content = document.querySelector('.content');
       content.innerHTML = '';
+      
       const msg = document.createElement('div');
       msg.className = 'message';
+      
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
+      
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.textContent = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
+      
       msg.appendChild(avatar);
       msg.appendChild(bubble);
       content.appendChild(msg);
+      
       const hint = document.createElement('div');
       hint.className = 'hint';
       hint.textContent = 'Inicie o seu diálogo!';
       content.appendChild(hint);
     }
 
-    // --- AQUI ESTÁ A MÁGICA 1: Carregar histórico com formatação ---
     function loadConversation(id) {
       const history = getHistory();
       const conv = history.find(h => h.id === id);
@@ -296,6 +308,7 @@
       currentConversationId = id;
       const content = document.querySelector('.content');
       content.innerHTML = '';
+      
       conv.messages.forEach(m => {
         const msg = document.createElement('div');
         msg.className = 'message' + (m.role === 'user' ? ' from-user' : '');
@@ -305,7 +318,7 @@
         const bubble = document.createElement('div');
         bubble.className = 'bubble';
 
-        // Se for IA, usa o marked.parse para ficar bonito
+        // FORMATAÇÃO DO HISTÓRICO
         if (m.role === 'user') {
           bubble.textContent = m.text;
         } else {
@@ -324,9 +337,6 @@
       renderAssistantGreeting();
     }
 
-    input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
-
-    // --- AQUI ESTÁ A MÁGICA 2: Mostrar mensagem nova com formatação ---
     function appendMessage(role, text) {
       const content = document.querySelector('.content');
       const msg = document.createElement('div');
@@ -337,11 +347,11 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
 
+      // FORMATAÇÃO DE MENSAGENS NOVAS
       if (role === 'user') {
         bubble.textContent = text;
       } else {
-        // Converte Markdown para HTML (Negrito, listas, etc)
-        bubble.innerHTML = marked.parse(text);
+        bubble.innerHTML = marked.parse(text); // Transforma Markdown em HTML
       }
 
       msg.appendChild(avatar);
@@ -358,15 +368,12 @@
       avatar.className = 'avatar';
       const bubble = document.createElement('div');
       bubble.className = 'bubble typing';
-      const d1 = document.createElement('span');
-      d1.className = 'dot';
-      const d2 = document.createElement('span');
-      d2.className = 'dot';
-      const d3 = document.createElement('span');
-      d3.className = 'dot';
-      bubble.appendChild(d1);
-      bubble.appendChild(d2);
-      bubble.appendChild(d3);
+      
+      const d1 = document.createElement('span'); d1.className = 'dot';
+      const d2 = document.createElement('span'); d2.className = 'dot';
+      const d3 = document.createElement('span'); d3.className = 'dot';
+      
+      bubble.appendChild(d1); bubble.appendChild(d2); bubble.appendChild(d3);
       msg.appendChild(avatar);
       msg.appendChild(bubble);
       content.appendChild(msg);
@@ -374,13 +381,18 @@
       return msg;
     }
 
-    // --- ENVIO PARA A NUVEM (RENDER) ---
+    // --- 3. CONEXÃO COM O BACKEND (RENDER) ---
+    input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
+    newChatBtn.addEventListener('click', startNewConversation);
+
     send.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
 
       appendMessage('user', text);
       
+      // Salva ou cria conversa no histórico
       let history = getHistory();
       if (!currentConversationId) {
         currentConversationId = Date.now().toString();
@@ -390,7 +402,7 @@
       if (idx !== -1) {
         history[idx].messages.push({ role: 'user', text });
         saveHistory(history);
-        loadHistory();
+        loadHistory(); // Atualiza sidebar
       }
 
       input.value = '';
@@ -399,7 +411,7 @@
       const typingEl = appendTyping();
 
       try {
-        // Link do seu servidor no Render
+        // CONEXÃO OFICIAL COM SEU SERVIDOR NA NUVEM
         const response = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -408,12 +420,13 @@
 
         const data = await response.json();
         
-        typingEl.remove();
+        typingEl.remove(); // Remove animação
         
         const reply = data.resposta;
 
         appendMessage('assistant', reply);
 
+        // Salva resposta da IA no histórico
         let h = getHistory();
         const i = h.findIndex(v => v.id === currentConversationId);
         if (i !== -1) {
@@ -424,14 +437,13 @@
       } catch (error) {
         typingEl.remove();
         console.error(error);
-        appendMessage('assistant', "Erro: Não consegui conectar ao servidor na nuvem.");
+        appendMessage('assistant', "⚠️ Erro: Não foi possível conectar ao servidor.");
       }
     });
 
-    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
-
-    newChatBtn.addEventListener('click', startNewConversation);
+    // Inicia o app
     loadHistory();
-  </script>
+    renderAssistantGreeting();
+</script>
 </body>
 </html>
