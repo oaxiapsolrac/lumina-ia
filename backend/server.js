@@ -1,59 +1,55 @@
-// backend/server.js - CÓDIGO COMPLETO
-
-// 1. Carrega as variáveis de ambiente
+// backend/server.js
 require('dotenv').config();
-
-// --- ÁREA DE TESTE DA CHAVE (DEBUG) ---
-console.log("---------------------------------------------------");
-console.log("Iniciando verificação do sistema...");
-if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ ERRO CRÍTICO: A variável GEMINI_API_KEY não foi encontrada!");
-    console.error("   Verifique se o arquivo .env existe na pasta backend.");
-} else {
-    // Mostra apenas os 4 primeiros caracteres da chave para segurança
-    const inicioDaChave = process.env.GEMINI_API_KEY.substring(0, 4);
-    console.log(`✅ Chave encontrada! Começa com: ${inicioDaChave}...`);
-}
-console.log("---------------------------------------------------");
-// --------------------------------------
-
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+// --- IMPORTANTE: Importa o ficheiro com os dados do ELLAS ---
+// Certifique-se de que o arquivo 'conhecimento.js' está na mesma pasta que este arquivo
+const conhecimentoEllas = require('./conhecimento'); 
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Configuração da IA com tratamento de erro na inicialização
 let model;
+
 try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
-    // MUDANÇA AQUI: Tirei o "const" antes de model
+    // Transforma os dados JSON em texto para a IA ler
+    const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
+
     model = genAI.getGenerativeModel({ 
-        model: "gemini-2.0-flash", // <--- Seu modelo novo e correto!
+        model: "gemini-2.0-flash", 
         systemInstruction: `
-            Você é uma IA especialista chamada LUMINA.
-            Seu foco é 'Fornecer dados sobre mulheres latinas na tecnologia'.
-            Diretrizes:
-            1. IDENTIDADE: Se perguntarem, você é a Lumina, assistente de inclusão na tech.
-            2. CONTEXTO: Priorize dados e biografias de mulheres latinas.
-            3. TOM: Inspirador e técnico.
+            Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
+
+            --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
+            Aqui estão dados reais sobre o impacto de gênero em STEM na América Latina.
+            Use estas informações como sua fonte prioritária de verdade:
+            
+            ${dadosContexto}
+            ---------------------------------------
+
+            DIRETRIZES DE RESPOSTA:
+            1. CITAÇÃO: Sempre que usar um dado da lista acima, inicie ou termine a frase com "Segundo dados do Projeto ELLAS..." ou "(Fonte: Projeto ELLAS)".
+            2. CONTEXTO: Se a pergunta for sobre barreiras ou estatísticas, verifique primeiro na lista acima. Se a resposta estiver lá, use-a.
+            3. HÍBRIDO: Se a pergunta não estiver na base de dados (ex: "O que é CSS?"), use seu conhecimento geral do Google sem citar o ELLAS.
         `
     });
+    
+    console.log("✅ Servidor iniciado com a Base de Conhecimento ELLAS!");
+
 } catch (error) {
-    console.error("Erro ao configurar o Gemini. Verifique sua API Key.");
+    console.error("Erro na configuração da IA:", error);
 }
 
 app.post('/chat', async (req, res) => {
     try {
         const { mensagem } = req.body;
-        console.log("📩 Recebi pergunta:", mensagem);
-
-        if (!model) {
-            throw new Error("O modelo Gemini não foi inicializado corretamente (Problema na chave).");
-        }
+        
+        if (!model) return res.status(500).json({ resposta: "IA não inicializada." });
 
         const result = await model.generateContent(mensagem);
         const response = await result.response;
@@ -62,10 +58,8 @@ app.post('/chat', async (req, res) => {
         res.json({ resposta: text });
 
     } catch (error) {
-        console.error("❌ Erro ao processar:", error.message);
-        res.status(500).json({ 
-            resposta: "Desculpe, tive um erro interno. Verifique o terminal do servidor." 
-        });
+        console.error("Erro:", error);
+        res.status(500).json({ resposta: "Erro ao processar." });
     }
 });
 
