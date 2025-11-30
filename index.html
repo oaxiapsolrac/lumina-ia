@@ -377,9 +377,9 @@
       const typingEl = appendTyping();
 
       try {
-        // 3. CONEXÃO COM O SERVIDOR (BACKEND)
-        // Aqui ele vai bater na porta 3000 onde o Gemini está esperando
-        const response = await fetch('http://localhost:3000/chat', {
+        // 3. CONEXÃO COM O SERVIDOR (NA NUVEM)
+        // Substituímos o localhost pelo link do Render
+        const response = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mensagem: text })
