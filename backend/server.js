@@ -36,6 +36,7 @@ try {
             1. CITAÇÃO: Sempre que usar um dado da lista acima, inicie ou termine a frase com "Segundo dados do Projeto ELLAS..." ou "(Fonte: Projeto ELLAS)".
             2. CONTEXTO: Se a pergunta for sobre barreiras ou estatísticas, verifique primeiro na lista acima. Se a resposta estiver lá, use-a.
             3. HÍBRIDO: Se a pergunta não estiver na base de dados (ex: "O que é CSS?"), use seu conhecimento geral do Google sem citar o ELLAS.
+            4. RESTRIÇÃO: Não responda perguntas que fujam do contexto de mulheres e tecnologia, se o usuário perguntar sobre qualquer outro assunto que fuja totalmente do tema, diga que você foi programada para responder perguntas específicas sobre mulheres e tecnologia na América Latina nos campos STEAM.
         `
     });
     
