@@ -423,13 +423,14 @@
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
     newChatBtn.addEventListener('click', startNewConversation);
 
-    send.addEventListener('click', async () => {
+send.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
 
+      // 1. Renderiza mensagem do usuário (instantânea)
       appendMessage('user', text);
       
-      // Salva ou cria conversa no histórico
+      // 2. Gerencia o Histórico
       let history = getHistory();
       if (!currentConversationId) {
         currentConversationId = Date.now().toString();
@@ -439,16 +440,17 @@
       if (idx !== -1) {
         history[idx].messages.push({ role: 'user', text });
         saveHistory(history);
-        loadHistory(); // Atualiza sidebar
+        loadHistory(); 
       }
 
       input.value = '';
       send.disabled = true;
 
+      // 3. Mostra animação de "digitando..." (bolinhas)
       const typingEl = appendTyping();
 
       try {
-        // CONEXÃO OFICIAL COM SEU SERVIDOR NA NUVEM
+        // 4. Conexão com o Backend
         const response = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -457,13 +459,40 @@
 
         const data = await response.json();
         
-        typingEl.remove(); // Remove animação
+        // Remove animação de carregamento
+        typingEl.remove(); 
         
         const reply = data.resposta;
 
-        appendMessage('assistant', reply);
+        // --- AQUI COMEÇA A ATUALIZAÇÃO DO EFEITO DE DIGITAÇÃO ---
 
-        // Salva resposta da IA no histórico
+        // A. Cria os elementos manualmente (Avatar + Bolha Vazia)
+        const content = document.querySelector('.content');
+        
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message'; // Sem 'from-user'
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'avatar';
+        
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'bubble'; 
+        // A bubble fica vazia por enquanto!
+        
+        msgDiv.appendChild(avatarDiv);
+        msgDiv.appendChild(bubbleDiv);
+        content.appendChild(msgDiv);
+
+        // B. Prepara o HTML (converte Markdown do backend para HTML)
+        // Certifique-se que a biblioteca 'marked' está carregada
+        const finalHtml = marked.parse(reply);
+
+        // C. Chama a função que criamos no passo anterior
+        typeWriter(finalHtml, bubbleDiv);
+
+        // --- FIM DA ATUALIZAÇÃO ---
+
+        // 5. Salva no histórico (Texto original, não HTML)
         let h = getHistory();
         const i = h.findIndex(v => v.id === currentConversationId);
         if (i !== -1) {
@@ -477,7 +506,40 @@
         appendMessage('assistant', "⚠️ Erro: Não foi possível conectar ao servidor.");
       }
     });
+// --- NOVA FUNÇÃO: EFEITO DE DIGITAÇÃO ---
+function typeWriter(htmlText, element, speed = 20) {
+  let i = 0;
+  element.innerHTML = ''; // Garante que começa vazio
+  
+  // Adiciona um "cursor" visual piscando enquanto digita
+  element.style.borderRight = '3px solid var(--primary-a)';
+  element.style.paddingRight = '5px';
 
+  const intervalId = setInterval(() => {
+    // Avança de 1 em 1 caractere (ou ajuste para ser mais rápido)
+    // Para textos muito longos, você pode aumentar o incremento (ex: i += 3)
+    i++; 
+
+    if (i > htmlText.length) {
+      i = htmlText.length;
+    }
+    
+    // O segredo: pega uma fatia do HTML completo e atualiza o elemento
+    // Isso funciona bem mesmo com tags HTML no meio do texto
+    element.innerHTML = htmlText.substring(0, i);
+    
+    // Mantém a tela rolando para baixo para acompanhar a digitação
+    window.scrollTo(0, document.body.scrollHeight);
+
+    // Quando chegar no final do texto, para o intervalo
+    if (i === htmlText.length) {
+      clearInterval(intervalId);
+      // Remove o cursor visual
+      element.style.borderRight = 'none';
+      element.style.paddingRight = '16px'; // Volta ao padding original do CSS
+    }
+  }, speed); // 'speed' é o tempo em milissegundos entre cada atualização
+}
     // Inicia o app
     loadHistory();
     renderAssistantGreeting();
