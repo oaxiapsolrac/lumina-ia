@@ -1,0 +1,57 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "LUMINA Chat API",
+    "version": "1.0.0",
+    "description": "API para respostas fundamentadas da LUMINA"
+  },
+  "servers": [
+    { "url": "http://localhost:3000" }
+  ],
+  "paths": {
+    "/chat": {
+      "post": {
+        "summary": "Gerar resposta baseada em contexto",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "mensagem": { "type": "string" } },
+                "required": ["mensagem"]
+              },
+              "examples": {
+                "pergunta": {
+                  "value": { "mensagem": "Explique o projeto Elas UFMT" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resposta gerada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resposta": { "type": "string" }
+                  }
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "resposta": "Resumo do documento com base na sua pergunta."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
