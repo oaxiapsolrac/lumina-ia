@@ -46,6 +46,8 @@
       padding: 14px 20px;
     }
     .menu-btn { display: none; margin-left: auto; border: none; background: transparent; font-size: 22px; cursor: pointer; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 99; }
+    body.menu-open { overflow: hidden; }
     .logo, .logo-img { width: 45px; height: 45px; }
     .brand { font-weight: 900; letter-spacing: 6px; }
     .sidebar {
@@ -233,7 +235,8 @@
       .logo, .logo-img { width: 36px; height: 36px; }
       .header-inner { padding: 10px 14px; }
       .sidebar { display: none; width: 100%; height: auto; padding-top: 60px; border-right: none; }
-      .sidebar.open { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: auto; z-index: 100; }
+      .sidebar.open { display: flex; position: fixed; top: 0; left: 0; right: auto; bottom: 0; width: 85%; max-width: 360px; z-index: 100; }
+      .overlay.show { display: block; }
       .content { margin-left: 0; padding: 20px 12px 96px; }
       .message .bubble { max-width: 100%; }
       .composer { left: 0; transform: none; max-width: 100%; bottom: 10px; padding: 0 10px; }
@@ -259,6 +262,7 @@
       <button id="toggleSidebar" class="menu-btn" aria-label="Menu">☰</button>
     </div>
   </header>
+  <div id="overlay" class="overlay"></div>
   <main>
     <aside class="sidebar">
       <button id="newChat" class="new-chat">Novo chat</button>
@@ -280,6 +284,7 @@
     const historyEl = document.getElementById('history');
     const newChatBtn = document.getElementById('newChat');
     const toggleBtn = document.getElementById('toggleSidebar');
+    const overlay = document.getElementById('overlay');
     let currentConversationId = null;
 
     // --- 1. GERENCIAMENTO DE HISTÓRICO ---
@@ -441,12 +446,16 @@
     input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
     newChatBtn.addEventListener('click', startNewConversation);
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        const sb = document.querySelector('.sidebar');
-        sb.classList.toggle('open');
-      });
+    function toggleMenu() {
+      const sb = document.querySelector('.sidebar');
+      const isOpen = sb.classList.toggle('open');
+      if (overlay) overlay.classList.toggle('show', isOpen);
+      document.body.classList.toggle('menu-open', isOpen);
+      if (toggleBtn) toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
+    if (toggleBtn) toggleBtn.addEventListener('click', toggleMenu);
+    if (overlay) overlay.addEventListener('click', toggleMenu);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const sb = document.querySelector('.sidebar'); if (sb.classList.contains('open')) toggleMenu(); }});
 
     send.addEventListener('click', async () => {
       const text = input.value.trim();
