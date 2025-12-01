@@ -45,6 +45,7 @@
       gap: 12px;
       padding: 14px 20px;
     }
+    .menu-btn { display: none; margin-left: auto; border: none; background: transparent; font-size: 22px; cursor: pointer; }
     .logo, .logo-img { width: 45px; height: 45px; }
     .brand { font-weight: 900; letter-spacing: 6px; }
     .sidebar {
@@ -228,6 +229,14 @@
     
     /* Ajuste para telas pequenas (Celular) */
     @media (max-width: 768px) {
+      .menu-btn { display: block; }
+      .logo, .logo-img { width: 36px; height: 36px; }
+      .header-inner { padding: 10px 14px; }
+      .sidebar { display: none; width: 100%; height: auto; padding-top: 60px; border-right: none; }
+      .sidebar.open { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: auto; z-index: 100; }
+      .content { margin-left: 0; padding: 20px 12px 96px; }
+      .message .bubble { max-width: 100%; }
+      .composer { left: 0; transform: none; max-width: 100%; bottom: 10px; padding: 0 10px; }
       .composer {
         left: 0;
         transform: none;
@@ -247,6 +256,7 @@
     <div class="header-inner">
       <img class="logo-img" src="logo.png" alt="LUMINA" onerror="this.src='logo.png'"/>
       <div class="brand">LUMINA</div>
+      <button id="toggleSidebar" class="menu-btn" aria-label="Menu">☰</button>
     </div>
   </header>
   <main>
@@ -269,6 +279,7 @@
     const send = document.getElementById('send');
     const historyEl = document.getElementById('history');
     const newChatBtn = document.getElementById('newChat');
+    const toggleBtn = document.getElementById('toggleSidebar');
     let currentConversationId = null;
 
     // --- 1. GERENCIAMENTO DE HISTÓRICO ---
@@ -430,6 +441,12 @@
     input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
     newChatBtn.addEventListener('click', startNewConversation);
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const sb = document.querySelector('.sidebar');
+        sb.classList.toggle('open');
+      });
+    }
 
     send.addEventListener('click', async () => {
       const text = input.value.trim();
