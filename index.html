@@ -10,22 +10,23 @@
   <style>
     /* --- CSS ORIGINAL DO DESIGN --- */
     :root {
+      --fundoprincipal: #15101E;
       --bg: #ffffff;
-      --text: #060606;
-      --border: #ffffff; /* cor das cordas */
+      --text: #e3dcdc;
+      --border: #ffffff; /* cor das bordas */
       --primary-a: #83097f;
       --primary-b: #ba49b0;
       --surface: #f7f7f7;
-      --lateralE: #c7c5c5;
+      --lateralE: #251C35;
       --cinzabalaousuario: #bfb7b7;
       --radius: 16px; 
       --max-w: 860px;
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; background: var(--bg); }
+    html, body { height: 100%; background: var(--fundoprincipal); }
     body {
       margin: 0;
-      color: var(--text);
+      color: var(--bg); /* cor do texto LUMINA e o que a lumina digitar */
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       display: flex;
       flex-direction: column;
@@ -55,7 +56,7 @@
       top: 0; left: 0; bottom: 0;
       width: 290px; /* largura do campo de historico de conversa */
       background: var(--lateralE); /* cor de fundo lateral esquerda */
-      border-right: 1px solid var(--border);
+      border-right: 1px solid transparent; /* corda da borda lateral*/
       padding-top: 80px;
       display: flex;
       flex-direction: column;
@@ -105,7 +106,7 @@
       border-radius: 6px; /* arredondamento da borda */
       cursor: pointer; /* cursor de ponteiro ao passar sobre */
     }
-    .delete-btn:hover { background: #F5F5F5; color: #D32F2F; }
+    .delete-btn:hover { background: #F5F5F5; color: #090909; }
     main { flex: 1; }
     .content {
       max-width: var(--max-w);
@@ -128,24 +129,24 @@
       width: 28px;
       height: 28px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary-a), var(--primary-b));
+      background: transparent;
       flex-shrink: 0;
     }
     .bubble {
-      background: var(--surface);
-      border: 1px solid var(--border);
+      background: var(--transparent);
+      border: 1px solid var(--transparent);
       border-radius: var(--radius);
       padding: 14px 16px;
       line-height: 1.6;
     }
-    .from-user .avatar { background: #D1D5DB; }
+    .from-user .avatar { background: transparent; } /*imagem do do usuario*/
     .message:not(.from-user) .avatar {
-      background-image: url('logo.png');
+      background-image: url('logo.png'); /*imagem da lunmina no chat*/
       background-size: cover;
       background-position: center;
       background-color: transparent;
     }
-    .from-user .bubble { background: var(--surface); text-align: right; margin-left: auto; }
+    .from-user .bubble { background: var(--transparent); text-align: right; margin-left: auto; } /* cor do balão do usuário */
     
     /* --- CSS NOVO: FORMATAÇÃO DA RESPOSTA (MARKDOWN) --- */
     .bubble p { margin: 0 0 10px 0; } /* espaçamento entre os parágrafos */
@@ -168,7 +169,7 @@
       transform: translateX(-50%); /* Ajuste exato do centro */
       width: 100%;
       max-width: 750px; /* Largura máxima parecida com o Gemini */
-      padding: 0 20px;
+      padding: 0 20px; /* tamanho do campo para o usuario escrever */
       background: transparent;
       border: none;
       z-index: 100; /* Garante que fique acima de tudo */
@@ -177,12 +178,12 @@
     /* A barra escura arredondada em si */
     .composer-inner {
       background: #1E1F20; /* Cor escura do Gemini */
-      border-radius: 36px; /* Bordas bem redondas */
+      border-radius: 24px; /* Bordas bem redondas */
       padding: 8px 12px 8px 24px; /* Espaçamento interno */
       display: flex;
       align-items: center;
       gap: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.2); /* Sombra suave */
+      box-shadow: 0px 4px 19px rgba(202, 202, 202, 0.2); /* Sombra suave */
       border: 1px solid #333; /* Borda sutil */
     }
 
@@ -191,7 +192,7 @@
       flex: 1;
       background: transparent;
       border: none;
-      color: #E3E3E3; /* Texto claro */
+      color: #e3e2e2; /* Texto claro */
       font-size: 16px;
       outline: none;
       padding: 10px 0;
@@ -218,6 +219,7 @@
       justify-content: center;
       transition: background 0.2s;
     }
+    .send-icon { width: 18px; height: 18px; display: block; }
     
     button#send:hover {
       filter: brightness(1.2);
@@ -274,7 +276,9 @@
   <div class="composer">
     <div class="composer-inner">
       <input id="prompt" class="input" type="text" placeholder="Pergunte sobre mulheres na tech..." autocomplete="off"/>
-      <button id="send" class="send" disabled>Enviar</button>
+      <button id="send" class="send" disabled aria-label="Enviar">
+        <img src="enviar.png" alt="Enviar" class="send-icon" />
+      </button>
     </div>
   </div>
 
