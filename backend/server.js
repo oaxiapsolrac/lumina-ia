@@ -23,7 +23,7 @@ try {
     // backend/server.js
 
     model = genAI.getGenerativeModel({ 
-       model: "gemini-1.5-flash", // <--- A ESCOLHA EQUILIBRADA
+       model: "gemini-2.5-flash", // <--- A ESCOLHA EQUILIBRADA
         systemInstruction: `
             Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
 
