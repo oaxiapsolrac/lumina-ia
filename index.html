@@ -302,24 +302,21 @@
     // CONFIGURAÇÕES
     const API_URL = 'https://lumina-backend-zsak.onrender.com/chat'; // Alterar aqui conforme ambiente
     // --- LÓGICA PARA PERMISSÃO DE VOZ ---
-let voiceEnabled = true; 
+let voiceEnabled = true; // Começa ativado
 const voiceToggle = document.getElementById('voiceToggle');
 
+// Função para destravar o áudio (essencial para celular)
+function destravarAudio() {
+    const kickstart = new SpeechSynthesisUtterance("");
+    window.speechSynthesis.speak(kickstart);
+}
+
 voiceToggle.addEventListener('click', () => {
-  // A mágica: Ao clicar aqui, o navegador "desbloqueia" o áudio para o celular
-  const kickstart = new SpeechSynthesisUtterance(""); 
-  window.speechSynthesis.speak(kickstart);
-
-  voiceEnabled = !voiceEnabled;
-
-  if (voiceEnabled) {
-    voiceToggle.textContent = '🔊'; // Ícone de som ligado
-    voiceToggle.style.color = '#ba49b0'; // Sua cor primary-b
-  } else {
-    voiceToggle.textContent = '🔈'; // Ícone de som desligado
-    voiceToggle.style.color = '#8E918F';
-    window.speechSynthesis.cancel(); // Para de falar se desativar
-  }
+    destravarAudio(); // Destrava ao clicar no botão de volume
+    voiceEnabled = !voiceEnabled;
+    voiceToggle.textContent = voiceEnabled ? '🔊' : '🔈';
+    voiceToggle.style.color = voiceEnabled ? '#ba49b0' : '#8E918F';
+    if (!voiceEnabled) window.speechSynthesis.cancel();
 });
     const input = document.getElementById('prompt');
     const send = document.getElementById('send');
@@ -358,6 +355,7 @@ voiceToggle.addEventListener('click', () => {
       };
 
       micBtn.addEventListener('click', () => {
+        destravarAudio(); 
         const kickstart = new SpeechSynthesisUtterance(""); // Fala um texto vazio
     window.speechSynthesis.speak(kickstart);           // "Desbloqueia" o áudio no celular
     // ---------------------------------------
@@ -418,19 +416,22 @@ voiceToggle.addEventListener('click', () => {
 
     // --- 3. INTERFACE ---
     function renderAssistantGreeting() {
-      const content = document.querySelector('.content');
-      content.innerHTML = '';
-      const msg = document.createElement('div');
-      msg.className = 'message';
-      const avatar = document.createElement('div');
-      avatar.className = 'avatar';
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-      bubble.textContent = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
-      msg.appendChild(avatar);
-      msg.appendChild(bubble);
-      content.appendChild(msg);
-      speakText(textoSaudacao);
+        const content = document.querySelector('.content');
+        content.innerHTML = '';
+        const msg = document.createElement('div');
+        msg.className = 'message';
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        
+        // Texto definido aqui para evitar erro de referência
+        bubble.textContent = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
+        
+        msg.appendChild(avatar);
+        msg.appendChild(bubble);
+        content.appendChild(msg);
+        
     }
 
     function loadConversation(id) {
@@ -521,6 +522,9 @@ function speakText(text) {
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const sb = document.querySelector('.sidebar'); if (sb.classList.contains('open')) toggleMenu(); }});
 
     send.addEventListener('click', async () => {
+      destravarAudio();
+      const kickstart = new SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(kickstart);
       const text = input.value.trim();
       if (!text) return;
 
@@ -607,7 +611,20 @@ function speakText(text) {
         }
       }, speed); 
     }
+    function falarSaudacaoInicial() {
+        if (voiceEnabled) {
+            const texto = 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!';
+            speakText(texto);
+        }
+        // Remove os eventos para não repetir a saudação a cada clique
+        document.removeEventListener('click', falarSaudacaoInicial);
+        document.removeEventListener('touchstart', falarSaudacaoInicial);
+    }
 
+    // Escuta o primeiro toque do usuário na página
+    document.addEventListener('click', falarSaudacaoInicial);
+    document.addEventListener('touchstart', falarSaudacaoInicial);
+    // =========================================================
     // Inicia o app
     loadHistory();
     renderAssistantGreeting();
