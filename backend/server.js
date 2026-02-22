@@ -139,7 +139,7 @@ app.post('/speak', async (req, res) => {
             return res.status(500).json({ error: 'Servidor de voz não configurado' });
         }
 
-        const audioStream = await client.textToSpeech.convert("JBFqnCBsd6RMkjVDRZzb", {
+        const audioStream = await client.textToSpeech.convert("lxYfHSkYm1EzQzGhdbfc", {
             text: text,
             model_id: "eleven_multilingual_v2",
             output_format: "mp3_44100_128",
