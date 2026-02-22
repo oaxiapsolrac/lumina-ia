@@ -274,8 +274,12 @@
       </div>
   </main>
 
-  <div class="composer">
+<div class="composer">
     <div class="composer-inner">
+      <!-- Botão de voz que você adicionou -->
+
+      <button id="voiceToggle" class="mic-btn" title="Desativar Voz" style="font-size: 18px; color: #ba49b0;">🔊</button>
+      <!-- Deixe apenas este input abaixo: -->
       <input id="prompt" class="input" type="text" placeholder="Pergunte sobre mulheres na tech..." autocomplete="off"/>
       
       <button id="micBtn" class="mic-btn" aria-label="Gravar áudio">
@@ -292,12 +296,31 @@
         <span style="font-size:18px;">➤</span>
       </button>
     </div>
-  </div>
+</div>
 
 <script>
     // CONFIGURAÇÕES
     const API_URL = 'https://lumina-backend-zsak.onrender.com/chat'; // Alterar aqui conforme ambiente
+    // --- LÓGICA PARA PERMISSÃO DE VOZ ---
+let voiceEnabled = true; 
+const voiceToggle = document.getElementById('voiceToggle');
 
+voiceToggle.addEventListener('click', () => {
+  // A mágica: Ao clicar aqui, o navegador "desbloqueia" o áudio para o celular
+  const kickstart = new SpeechSynthesisUtterance(""); 
+  window.speechSynthesis.speak(kickstart);
+
+  voiceEnabled = !voiceEnabled;
+
+  if (voiceEnabled) {
+    voiceToggle.textContent = '🔊'; // Ícone de som ligado
+    voiceToggle.style.color = '#ba49b0'; // Sua cor primary-b
+  } else {
+    voiceToggle.textContent = '🔈'; // Ícone de som desligado
+    voiceToggle.style.color = '#8E918F';
+    window.speechSynthesis.cancel(); // Para de falar se desativar
+  }
+});
     const input = document.getElementById('prompt');
     const send = document.getElementById('send');
     const historyEl = document.getElementById('history');
@@ -407,6 +430,7 @@
       msg.appendChild(avatar);
       msg.appendChild(bubble);
       content.appendChild(msg);
+      speakText(textoSaudacao);
     }
 
     function loadConversation(id) {
@@ -468,14 +492,17 @@
     }
 
     // --- 4. FUNÇÃO DE FALA (OUTPUT - RESTAURADA) ---
-    function speakText(text) {
-      window.speechSynthesis.cancel(); // Para falas anteriores
-      const cleanText = text.replace(/[*#_`]/g, ''); 
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'pt-BR';
-      utterance.rate = 1.1; 
-      window.speechSynthesis.speak(utterance);
-    }
+function speakText(text) {
+  // SÓ FALA SE O USUÁRIO CLICOU NO BOTÃO PARA ATIVAR
+  if (!voiceEnabled) return;
+
+  window.speechSynthesis.cancel(); 
+  const cleanText = text.replace(/[*#_`]/g, ''); 
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 1.1; 
+  window.speechSynthesis.speak(utterance);
+}
 
     // --- 5. ENVIO E CONEXÃO ---
     input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
