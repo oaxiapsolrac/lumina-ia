@@ -1,5 +1,17 @@
 // backend/server.js
-// No topo do backend/server.js
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const { GoogleGenerativeAI } = require("@google-generative-ai/generative-ai");
+const conhecimentoEllas = require('./conhecimento'); 
+
+// Inicializa o dotenv antes de qualquer coisa
+dotenv.config();
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
 // Tente ler do ambiente do Render primeiro, depois do dotenv
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -7,31 +19,18 @@ if (!apiKey) {
     console.error("❌ ERRO CRÍTICO: Chave API não encontrada no Render!");
 }
 
-const genAI = new GoogleGenerativeAI(apiKey);
-const express = require('express');
-const cors = require('cors');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-// --- IMPORTANTE: Importa o ficheiro com os dados do ELLAS ---
-// Certifique-se de que o arquivo 'conhecimento.js' está na mesma pasta que este arquivo
-const conhecimentoEllas = require('./conhecimento'); 
-
-const app = express();
-app.use(express.json());
-app.use(cors());
-
 let model;
 
 try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    // Inicializa a IA apenas se a chave existir
+    const genAI = new GoogleGenerativeAI(apiKey);
     
     // Transforma os dados JSON em texto para a IA ler
     const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
-    // backend/server.js
-
     model = genAI.getGenerativeModel({ 
-       model: "gemini-2.0-flash", // <--- A ESCOLHA EQUILIBRADA
+
+        model: "gemini-2.5-flash", 
         systemInstruction: `
             Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
 
@@ -52,14 +51,16 @@ try {
     console.log("✅ Servidor iniciado com a Base de Conhecimento ELLAS!");
 
 } catch (error) {
-    console.error("Erro na configuração da IA:", error);
+    console.error("❌ Erro na configuração da IA:", error);
 }
 
 app.post('/chat', async (req, res) => {
     try {
         const { mensagem } = req.body;
         
-        if (!model) return res.status(500).json({ resposta: "IA não inicializada." });
+        if (!model) {
+            return res.status(500).json({ resposta: "IA não inicializada. Verifique a chave API." });
+        }
 
         const result = await model.generateContent(mensagem);
         const response = await result.response;
@@ -68,12 +69,21 @@ app.post('/chat', async (req, res) => {
         res.json({ resposta: text });
 
     } catch (error) {
-        console.error("Erro:", error);
-        res.status(500).json({ resposta: "Erro ao processar." });
+        console.error("Erro no processamento do chat:", error);
+        
+        // Trata o erro de limite de cota (429) de forma amigável
+        if (error.status === 429) {
+            return res.status(429).json({ 
+                resposta: "Lumina está um pouco ocupada agora (limite de cota atingido). Por favor, tente novamente em um minuto." 
+            });
+        }
+
+        res.status(500).json({ resposta: "Erro ao processar sua mensagem." });
     }
 });
 
-const PORT = 3000;
+// Porta configurada para o Render (process.env.PORT) ou 3000 local
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
