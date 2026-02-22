@@ -11,8 +11,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Função auxiliar para esperar (evita bloqueio de IP)
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // 1. Configuração da Rotação Silenciosa
-// No Render, configure GEMINI_KEYS com as chaves separadas por vírgula (ex: chave1,chave2,chave3)
 const keysString = process.env.GEMINI_KEYS || process.env.GEMINI_API_KEY || "";
 const apiKeys = keysString.split(',').map(key => key.trim()).filter(key => key !== "");
 let currentKeyIndex = 0;
@@ -24,11 +26,12 @@ if (apiKeys.length === 0) {
 // 2. Função para preparar o modelo com a chave atual
 function getModelForIndex(index) {
     try {
+        if (!apiKeys[index]) return null;
         const genAI = new GoogleGenerativeAI(apiKeys[index]);
         const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
         return genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash", 
+            model: "gemini-2.0-flash", 
             systemInstruction: `
                 Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
                 --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
@@ -44,7 +47,6 @@ function getModelForIndex(index) {
     }
 }
 
-// Inicializa o primeiro modelo da lista
 let model = apiKeys.length > 0 ? getModelForIndex(currentKeyIndex) : null;
 
 app.post('/chat', async (req, res) => {
@@ -54,10 +56,8 @@ app.post('/chat', async (req, res) => {
         return res.status(500).json({ resposta: "Erro de configuração: Sem chaves API." });
     }
 
-    // Tenta as chaves uma por uma sem avisar o usuário
     for (let i = 0; i < apiKeys.length; i++) {
         try {
-            // Se o modelo não estiver pronto ou falhou antes, tenta inicializar
             if (!model) {
                 model = getModelForIndex(currentKeyIndex);
             }
@@ -65,23 +65,31 @@ app.post('/chat', async (req, res) => {
             const result = await model.generateContent(mensagem);
             const response = await result.response;
             
-            // Se chegou aqui, a chave funcionou. Retorna a resposta e encerra a função.
             return res.json({ resposta: response.text() });
 
         } catch (error) {
             console.warn(`⚠️ Chave ${currentKeyIndex + 1} falhou (Status: ${error.status}). Tentando a próxima...`);
             
-            // Rotaciona o índice para a próxima chave
+            // Se o erro for excesso de requisições, esperamos 2 segundos antes de tentar a próxima chave
+            if (error.status === 429) {
+                await sleep(2000); 
+            }
+
             currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
             model = getModelForIndex(currentKeyIndex);
-            
-            // O loop 'for' continuará para a próxima tentativa
         }
     }
 
-    // Se o código chegar aqui, significa que percorreu TODAS as chaves e todas falharam
     res.status(429).json({ 
         resposta: "No momento, todas as minhas capacidades de processamento estão ocupadas. Por favor, tente novamente em instantes." 
+    });
+});
+
+app.get('/status-keys', (req, res) => {
+    res.json({
+        total_chaves: apiKeys.length,
+        chave_atual: currentKeyIndex + 1,
+        status: apiKeys.length > 0 ? "Pronto para Rotação" : "Sem Chaves"
     });
 });
 
