@@ -1,5 +1,10 @@
 // backend/server.js
+// No topo do backend/server.js
 require('dotenv').config();
+
+if (!process.env.GEMINI_API_KEY) {
+  console.error("❌ ALERTA: A chave GEMINI_API_KEY não foi configurada no ambiente!");
+}
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
