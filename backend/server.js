@@ -2,33 +2,37 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-// O nome correto do pacote é @google/generative-ai
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk"); // Importa a SDK da Groq
 const conhecimentoEllas = require('./conhecimento'); 
 
-// Inicializa o dotenv antes de ler as variáveis
+// Inicializa o dotenv
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Tente ler do ambiente do Render primeiro
-const apiKey = process.env.GEMINI_API_KEY;
+// Configuração da API Key
+const apiKey = process.env.GROQ_API_KEY; // Alterado para GROQ_API_KEY
 
 if (!apiKey) {
-    console.error("❌ ERRO CRÍTICO: Chave API não encontrada no Render ou .env!");
+    console.error("❌ ERRO CRÍTICO: Chave API (GROQ_API_KEY) não encontrada!");
 }
 
-let model;
+// Inicializa o cliente Groq
+const groq = new Groq({ apiKey: apiKey });
 
-try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
+console.log("✅ Servidor iniciado. Aguardando requisições...");
 
-    model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite", 
-        systemInstruction: `
+app.post('/chat', async (req, res) => {
+    try {
+        const { mensagem } = req.body;
+        
+        // Prepara a base de conhecimento
+        const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
+
+        // Define a instrução do sistema (System Prompt)
+        const systemInstruction = `
             Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
             --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
             Aqui estão dados reais sobre o impacto de gênero em STEM na América Latina:
@@ -38,32 +42,27 @@ try {
             1. CITAÇÃO: Sempre use "Segundo dados do Projeto ELLAS..." ou "(Fonte: Projeto ELLAS)".
             2. CONTEXTO: Use a base de dados como prioridade.
             3. HÍBRIDO: Use conhecimento geral apenas se o tema não estiver na base.
-        `
-    });
-    
-    console.log("✅ Servidor iniciado com a Base de Conhecimento ELLAS!");
+            4. IDIOMA: Responda sempre em Português do Brasil.
+        `;
 
-} catch (error) {
-    console.error("❌ Erro na configuração da IA:", error);
-}
+        // Chamada à API da Groq
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: mensagem }
+            ],
+            model: "meta-llama/llama-4-scout-17b-16e-instruct", // Modelo recomendado (rápido e inteligente)
+            temperature: 0.5, // Controla a criatividade (0.5 é balanceado)
+            max_tokens: 1024,
+        });
 
-app.post('/chat', async (req, res) => {
-    try {
-        const { mensagem } = req.body;
-        if (!model) return res.status(500).json({ resposta: "IA não inicializada." });
+        const respostaTexto = chatCompletion.choices[0]?.message?.content || "Desculpe, não consegui processar a resposta.";
 
-        const result = await model.generateContent(mensagem);
-        const response = await result.response;
-        const text = response.text();
-
-        res.json({ resposta: text });
+        res.json({ resposta: respostaTexto });
 
     } catch (error) {
         console.error("Erro no processamento:", error);
-        if (error.status === 429) {
-            return res.status(429).json({ resposta: "Lumina está ocupada (limite de cota). Tente em 1 minuto." });
-        }
-        res.status(500).json({ resposta: "Temporariamente indisponível. Tente novamente em alguns minutos." });
+        res.status(500).json({ resposta: "Erro ao conectar com a Lumina (Groq). Tente novamente." });
     }
 });
 
