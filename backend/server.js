@@ -27,7 +27,7 @@ try {
     const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
     model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite", 
+        model: "gemma-3-27b-it", 
         systemInstruction: `
             Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
             --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
@@ -63,7 +63,7 @@ app.post('/chat', async (req, res) => {
         if (error.status === 429) {
             return res.status(429).json({ resposta: "Lumina está ocupada (limite de cota). Tente em 1 minuto." });
         }
-        res.status(500).json({ resposta: "Erro ao processar sua mensagem." });
+        res.status(500).json({ resposta: "Temporariamente indisponível. Tente novamente em alguns minutos." });
     }
 });
 
