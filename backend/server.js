@@ -2,72 +2,90 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-// O nome correto do pacote é @google/generative-ai
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const conhecimentoEllas = require('./conhecimento'); 
 
-// Inicializa o dotenv antes de ler as variáveis
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Tente ler do ambiente do Render primeiro
-const apiKey = process.env.GEMINI_API_KEY;
+// 1. Configuração da Rotação Silenciosa
+// No Render, configure GEMINI_KEYS com as chaves separadas por vírgula (ex: chave1,chave2,chave3)
+const keysString = process.env.GEMINI_KEYS || process.env.GEMINI_API_KEY || "";
+const apiKeys = keysString.split(',').map(key => key.trim()).filter(key => key !== "");
+let currentKeyIndex = 0;
 
-if (!apiKey) {
-    console.error("❌ ERRO CRÍTICO: Chave API não encontrada no Render ou .env!");
+if (apiKeys.length === 0) {
+    console.error("❌ ERRO: Nenhuma chave API configurada!");
 }
 
-let model;
+// 2. Função para preparar o modelo com a chave atual
+function getModelForIndex(index) {
+    try {
+        const genAI = new GoogleGenerativeAI(apiKeys[index]);
+        const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
-try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
-
-    model = genAI.getGenerativeModel({ 
-        model: "gemini-2.0-flash-lite", 
-        systemInstruction: `
-            Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
-            --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
-            Aqui estão dados reais sobre o impacto de gênero em STEM na América Latina:
-            ${dadosContexto}
-            ---------------------------------------
-            DIRETRIZES DE RESPOSTA:
-            1. CITAÇÃO: Sempre use "Segundo dados do Projeto ELLAS..." ou "(Fonte: Projeto ELLAS)".
-            2. CONTEXTO: Use a base de dados como prioridade.
-            3. HÍBRIDO: Use conhecimento geral apenas se o tema não estiver na base.
-        `
-    });
-    
-    console.log("✅ Servidor iniciado com a Base de Conhecimento ELLAS!");
-
-} catch (error) {
-    console.error("❌ Erro na configuração da IA:", error);
+        return genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash", 
+            systemInstruction: `
+                Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
+                --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
+                ${dadosContexto}
+                ---------------------------------------
+                DIRETRIZES:
+                1. CITAÇÃO: Sempre use "Segundo dados do Projeto ELLAS..." ou "(Fonte: Projeto ELLAS)".
+                2. CONTEXTO: Use a base de dados fornecida acima como sua fonte primária.
+            `
+        });
+    } catch (e) {
+        return null;
+    }
 }
+
+// Inicializa o primeiro modelo da lista
+let model = apiKeys.length > 0 ? getModelForIndex(currentKeyIndex) : null;
 
 app.post('/chat', async (req, res) => {
-    try {
-        const { mensagem } = req.body;
-        if (!model) return res.status(500).json({ resposta: "IA não inicializada." });
-
-        const result = await model.generateContent(mensagem);
-        const response = await result.response;
-        const text = response.text();
-
-        res.json({ resposta: text });
-
-    } catch (error) {
-        console.error("Erro no processamento:", error);
-        if (error.status === 429) {
-            return res.status(429).json({ resposta: "Lumina está ocupada (limite de cota). Tente em 1 minuto." });
-        }
-        res.status(500).json({ resposta: "Erro ao processar sua mensagem." });
+    const { mensagem } = req.body;
+    
+    if (!apiKeys.length) {
+        return res.status(500).json({ resposta: "Erro de configuração: Sem chaves API." });
     }
+
+    // Tenta as chaves uma por uma sem avisar o usuário
+    for (let i = 0; i < apiKeys.length; i++) {
+        try {
+            // Se o modelo não estiver pronto ou falhou antes, tenta inicializar
+            if (!model) {
+                model = getModelForIndex(currentKeyIndex);
+            }
+
+            const result = await model.generateContent(mensagem);
+            const response = await result.response;
+            
+            // Se chegou aqui, a chave funcionou. Retorna a resposta e encerra a função.
+            return res.json({ resposta: response.text() });
+
+        } catch (error) {
+            console.warn(`⚠️ Chave ${currentKeyIndex + 1} falhou (Status: ${error.status}). Tentando a próxima...`);
+            
+            // Rotaciona o índice para a próxima chave
+            currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+            model = getModelForIndex(currentKeyIndex);
+            
+            // O loop 'for' continuará para a próxima tentativa
+        }
+    }
+
+    // Se o código chegar aqui, significa que percorreu TODAS as chaves e todas falharam
+    res.status(429).json({ 
+        resposta: "No momento, todas as minhas capacidades de processamento estão ocupadas. Por favor, tente novamente em instantes." 
+    });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🚀 Lumina Online com ${apiKeys.length} chaves em rotação.`);
 });
