@@ -295,6 +295,9 @@
   </div>
 
 <script>
+    // CONFIGURAÇÕES
+    const API_URL = 'http://localhost:3000/chat'; // Alterar aqui conforme ambiente (produção: https://lumina-backend-zsak.onrender.com/chat)
+
     const input = document.getElementById('prompt');
     const send = document.getElementById('send');
     const historyEl = document.getElementById('history');
@@ -511,7 +514,7 @@
       const typingEl = appendTyping();
 
       try {
-        const response = await fetch('https://lumina-backend-zsak.onrender.com/chat', {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mensagem: text })
