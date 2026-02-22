@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const Groq = require("groq-sdk"); 
 const conhecimentoEllas = require('./conhecimento'); 
+const { ElevenLabsClient } = require('elevenlabs'); // [NOVO] Importação necessária
 
 // Inicializa o dotenv
 dotenv.config();
@@ -14,6 +15,7 @@ app.use(cors());
 
 // Configuração da API Key
 const apiKey = process.env.GROQ_API_KEY;
+const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY; // [NOVO] Pega a chave do .env
 
 if (!apiKey) {
     console.error("❌ ERRO CRÍTICO: Chave API (GROQ_API_KEY) não encontrada!");
@@ -23,8 +25,14 @@ if (!apiKey) {
 // Inicializa o cliente Groq
 const groq = new Groq({ apiKey: apiKey });
 
+// [NOVO] Inicializa o cliente ElevenLabs
+const client = new ElevenLabsClient({ 
+    apiKey: elevenLabsApiKey 
+});
+
 console.log("✅ Servidor iniciado. Aguardando requisições...");
 
+// --- ROTA ORIGINAL DO CHAT (INTACTA) ---
 app.post('/chat', async (req, res) => {
     try {
         const { mensagem } = req.body;
@@ -103,7 +111,7 @@ app.post('/chat', async (req, res) => {
                 { role: "user", content: mensagem }
             ],
             // Mantido exatamente o seu modelo original
-            model: "meta-llama/llama-4-scout-17b-16e-instruct", 
+            model: "meta-llama/llama-3.3-70b-versatile", 
             temperature: 0.5, 
             max_tokens: 1024,
         });
@@ -115,6 +123,34 @@ app.post('/chat', async (req, res) => {
     } catch (error) {
         console.error("Erro no processamento:", error);
         res.status(500).json({ resposta: "Erro ao conectar com a Lumina (Groq). Tente novamente." });
+    }
+});
+
+// --- [NOVO] ROTA DE ÁUDIO PARA ELEVENLABS ---
+app.post('/speak', async (req, res) => {
+    try {
+        const { text } = req.body;
+
+        if (!text) return res.status(400).json({ error: 'Texto obrigatório' });
+        
+        // Verifica se a chave existe antes de tentar chamar
+        if (!elevenLabsApiKey) {
+            console.error("❌ ERRO: ELEVENLABS_API_KEY não configurada no .env");
+            return res.status(500).json({ error: 'Servidor de voz não configurado' });
+        }
+
+        const audioStream = await client.textToSpeech.convert("JBFqnCBsd6RMkjVDRZzb", {
+            text: text,
+            model_id: "eleven_multilingual_v2",
+            output_format: "mp3_44100_128",
+        });
+
+        res.setHeader('Content-Type', 'audio/mpeg');
+        audioStream.pipe(res);
+
+    } catch (error) {
+        console.error('Erro no ElevenLabs:', error);
+        res.status(500).json({ error: 'Erro ao gerar áudio' });
     }
 });
 
