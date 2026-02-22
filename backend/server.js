@@ -31,7 +31,7 @@ function getModelForIndex(index) {
         const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
         return genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
+            model: "gemma-3-27b-it", 
             systemInstruction: `
                 Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
                 --- BASE DE DADOS EXCLUSIVA (ELLAS) ---
