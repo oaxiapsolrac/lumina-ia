@@ -1,10 +1,13 @@
 // backend/server.js
 // No topo do backend/server.js
-require('dotenv').config();
+// Tente ler do ambiente do Render primeiro, depois do dotenv
+const apiKey = process.env.GEMINI_API_KEY;
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error("❌ ALERTA: A chave GEMINI_API_KEY não foi configurada no ambiente!");
+if (!apiKey) {
+    console.error("❌ ERRO CRÍTICO: Chave API não encontrada no Render!");
 }
+
+const genAI = new GoogleGenerativeAI(apiKey);
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -28,7 +31,7 @@ try {
     // backend/server.js
 
     model = genAI.getGenerativeModel({ 
-       model: "gemini-2.0-flash-lite", // <--- A ESCOLHA EQUILIBRADA
+       model: "gemini-2.0-flash", // <--- A ESCOLHA EQUILIBRADA
         systemInstruction: `
             Você é a LUMINA, a IA especialista do Projeto ELLAS (UFMT).
 
