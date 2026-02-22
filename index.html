@@ -295,6 +295,8 @@
       if (!voiceEnabled) return;
       window.speechSynthesis.cancel(); 
       const u = new SpeechSynthesisUtterance(t.replace(/[*#_`]/g, '')); u.lang = 'pt-BR';
+      u.rate = 1.1;  // 1.0 é o normal. 1.1 é um pouco mais rápido.
+      // --------------------------------
       window.speechSynthesis.speak(u);
     }
 
