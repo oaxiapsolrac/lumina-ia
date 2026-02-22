@@ -467,67 +467,17 @@
       return msg;
     }
 
-// --- 4. FUNÇÃO DE FALA (OUTPUT) ---
+    // --- 4. FUNÇÃO DE FALA (OUTPUT - RESTAURADA) ---
     function speakText(text) {
-      // 1. Cancela qualquer áudio anterior para não encavalar
-      window.speechSynthesis.cancel(); 
-
-      // 2. Limpeza completa: Remove *, #, _, ~, ` para a IA não ler símbolos
-      const cleanText = text.replace(/[*#_`~]/g, ''); 
-
+      window.speechSynthesis.cancel(); // Para falas anteriores
+      const cleanText = text.replace(/[*#_`]/g, ''); 
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'pt-BR'; // Português do Brasil
-      utterance.rate = 1.1;     // Velocidade 1.1 soa mais natural que a 1.0
-      
-      // 3. Manda o navegador falar
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.1; 
       window.speechSynthesis.speak(utterance);
     }
 
-    // --- 4. RECONHECIMENTO DE VOZ (INPUT - MICROFONE) ---
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'pt-BR';
-      recognition.continuous = false; // Para assim que você termina de falar
-      recognition.interimResults = false; // Só manda o resultado final
-
-      // Quando o microfone entende o que você disse:
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        inputField.value = transcript; // Coloca o que você falou no campo de texto
-        micBtn.classList.remove('recording');
-        
-        // DICA: Você pode disparar o envio automático aqui se quiser!
-        // handleSend(); 
-      };
-
-      recognition.onerror = (event) => {
-        console.error("Erro no microfone:", event.error);
-        micBtn.classList.remove('recording');
-      };
-
-      recognition.onend = () => {
-        micBtn.classList.remove('recording');
-      };
-
-      // Evento do botão do Microfone
-      micBtn.addEventListener('click', () => {
-        // TRUQUE PARA CELULAR: Desbloqueia o áudio antes de começar a ouvir
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
-
-        if (micBtn.classList.contains('recording')) {
-          recognition.stop();
-        } else {
-          micBtn.classList.add('recording');
-          recognition.start();
-        }
-      });
-    } else {
-      console.warn("Este navegador não suporta reconhecimento de voz.");
-      micBtn.style.display = 'none'; // Esconde o botão se não funcionar
-    }
-    // --- 6. ENVIO E CONEXÃO ---
+    // --- 5. ENVIO E CONEXÃO ---
     input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !send.disabled) { e.preventDefault(); send.click(); } });
     newChatBtn.addEventListener('click', startNewConversation);
@@ -546,10 +496,6 @@
     send.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
-
-      // 🚀 TRUQUE PARA CELULAR: Desbloqueia o canal de áudio no momento do clique
-      // Sem isso, o navegador mobile bloqueia o speakText(reply) que vem depois.
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
 
       appendMessage('user', text);
       
@@ -578,11 +524,12 @@
         });
 
         const data = await response.json();
+        
         typingEl.remove();
+        
         const reply = data.resposta;
         
-        // --- CHAMA A FALA ---
-        // Agora o celular vai permitir, pois você "avisou" no início do clique!
+        // CHAMA A FUNÇÃO DE FALA AQUI
         speakText(reply);
 
         const content = document.querySelector('.content');
@@ -607,8 +554,36 @@
         }
 
       } catch (error) {
-        if (typingEl) typingEl.remove();
+        typingEl.remove();
         console.error(error);
-        appendMessage('assistant', "⚠️ Erro: Não foi possível conectar à Lumina.");
+        appendMessage('assistant', "⚠️ Erro: Não foi possível conectar ao servidor.");
       }
     });
+
+    function typeWriter(htmlText, element, speed = 20) {
+      let i = 0;
+      element.innerHTML = ''; 
+      element.style.borderRight = '3px solid var(--primary-a)';
+      element.style.paddingRight = '5px';
+
+      const intervalId = setInterval(() => {
+        i++; 
+        if (i > htmlText.length) { i = htmlText.length; }
+        
+        element.innerHTML = htmlText.substring(0, i);
+        window.scrollTo(0, document.body.scrollHeight);
+
+        if (i === htmlText.length) {
+          clearInterval(intervalId);
+          element.style.borderRight = 'none';
+          element.style.paddingRight = '16px'; 
+        }
+      }, speed); 
+    }
+
+    // Inicia o app
+    loadHistory();
+    renderAssistantGreeting();
+</script>
+</body>
+</html>
