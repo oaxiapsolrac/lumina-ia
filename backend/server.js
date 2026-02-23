@@ -130,27 +130,29 @@ app.post('/chat', async (req, res) => {
 app.post('/speak', async (req, res) => {
     try {
         const { text } = req.body;
-
         if (!text) return res.status(400).json({ error: 'Texto obrigatório' });
-        
-        // Verifica se a chave existe antes de tentar chamar
-        if (!elevenLabsApiKey) {
-            console.error("❌ ERRO: ELEVENLABS_API_KEY não configurada no .env");
-            return res.status(500).json({ error: 'Servidor de voz não configurado' });
-        }
 
-        const audioStream = await client.textToSpeech.convert("lxYfHSkYm1EzQzGhdbfc", {
-            text: text,
+        console.log("Gerando áudio para:", text.substring(0, 30) + "...");
+
+        // Remova caracteres especiais que podem travar a voz
+        const cleanText = text.replace(/[*#_`]/g, '');
+
+        const audio = await client.generate({
+            voice: "lxYfHSkYm1EzQzGhdbfc", // Verifique se este ID está correto no seu painel ElevenLabs
             model_id: "eleven_multilingual_v2",
-            output_format: "mp3_44100_128",
+            text: cleanText,
         });
 
+        // Configura os headers corretamente para o navegador entender que é áudio
         res.setHeader('Content-Type', 'audio/mpeg');
-        audioStream.pipe(res);
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        // Envia o stream diretamente para a resposta
+        audio.pipe(res);
 
     } catch (error) {
-        console.error('Erro no ElevenLabs:', error);
-        res.status(500).json({ error: 'Erro ao gerar áudio' });
+        console.error('Erro detalhado ElevenLabs:', error);
+        res.status(500).json({ error: 'Erro ao gerar áudio', detalhes: error.message });
     }
 });
 
