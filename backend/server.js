@@ -1,10 +1,11 @@
+
 // backend/server.js
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const Groq = require("groq-sdk"); 
 const conhecimentoEllas = require('./conhecimento'); 
-const { ElevenLabsClient } = require('elevenlabs'); // [NOVO] Importação necessária
+const { ElevenLabsClient } = require('elevenlabs'); 
 
 // Inicializa o dotenv
 dotenv.config();
@@ -13,34 +14,33 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Configuração da API Key
+// Configuração das API Keys
 const apiKey = process.env.GROQ_API_KEY;
-const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY; // [NOVO] Pega a chave do .env
+const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
 
+// Verificação de segurança das chaves
 if (!apiKey) {
-    console.error("❌ ERRO CRÍTICO: Chave API (GROQ_API_KEY) não encontrada!");
-    process.exit(1); 
+    console.error("❌ ERRO: GROQ_API_KEY não encontrada!");
+}
+if (!elevenLabsApiKey) {
+    console.error("❌ ERRO: ELEVENLABS_API_KEY não encontrada!");
 }
 
-// Inicializa o cliente Groq
+// Inicializa os clientes
 const groq = new Groq({ apiKey: apiKey });
+const client = new ElevenLabsClient({ apiKey: elevenLabsApiKey });
 
-// [NOVO] Inicializa o cliente ElevenLabs
-const client = new ElevenLabsClient({ 
-    apiKey: elevenLabsApiKey 
+// Rota de Teste (Health Check para o Render)
+app.get('/', (req, res) => {
+    res.send("Servidor da Lumina está online!");
 });
 
-console.log("✅ Servidor iniciado. Aguardando requisições...");
-
-// --- ROTA ORIGINAL DO CHAT (INTACTA) ---
+// --- ROTA DO CHAT (GROQ) ---
 app.post('/chat', async (req, res) => {
     try {
         const { mensagem } = req.body;
-        
-        // Formata a base de dados como string
         const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
-        // --- SYSTEM PROMPT PRO (COMPLETO) ---
         const systemInstruction = `
         <system_directive>
             <role_definition>
@@ -103,30 +103,26 @@ app.post('/chat', async (req, res) => {
             </formatting_guide>
         </system_directive>
         `;
-
-        // Chamada à API da Groq
         const chatCompletion = await groq.chat.completions.create({
             messages: [
                 { role: "system", content: systemInstruction },
                 { role: "user", content: mensagem }
             ],
-            // Mantido exatamente o seu modelo original
             model: "meta-llama/llama-4-maverick-17b-128e-instruct", 
             temperature: 0.5, 
             max_tokens: 1024,
         });
 
         const respostaTexto = chatCompletion.choices[0]?.message?.content || "Desculpe, não consegui processar a resposta.";
-
         res.json({ resposta: respostaTexto });
 
     } catch (error) {
-        console.error("Erro no processamento:", error);
-        res.status(500).json({ resposta: "Erro ao conectar com a Lumina (Groq). Tente novamente." });
+        console.error("Erro no Groq:", error);
+        res.status(500).json({ resposta: "Erro ao conectar com a Lumina. Tente novamente." });
     }
 });
 
-// --- [NOVO] ROTA DE ÁUDIO PARA ELEVENLABS ---
+// --- ROTA DE ÁUDIO (ELEVENLABS) CORRIGIDA ---
 app.post('/speak', async (req, res) => {
     try {
         const { text } = req.body;
@@ -134,32 +130,36 @@ app.post('/speak', async (req, res) => {
 
         console.log("Gerando áudio via ElevenLabs...");
 
-        // 1. Limpeza simples de Markdown
+        // Limpa Markdown do texto antes de falar
         const cleanText = text.replace(/[*#_`]/g, '');
 
-        // 2. Usando o método NOVO: textToSpeech.convert
-        // Note que agora usamos modelId (camelCase) e não model_id
+        // Chamada usando o padrão novo do SDK
         const audioStream = await client.textToSpeech.convert(
-            "wXwzHFLHnXex5h3JPBXA", // ID da voz (Bella ou a sua preferida)
+            "wXwzHFLHnXex5h3JPBXA", // ID da voz Bella
             {
                 text: cleanText,
-                modelId: "eleven_multilingual_v2", // Mudou de model_id para modelId
-                outputFormat: "mp3_44100_128",     // Opcional: define a qualidade
+                modelId: "eleven_multilingual_v2",
+                outputFormat: "mp3_44100_128",
             }
         );
 
-        // 3. Configura os headers para o navegador reconhecer o áudio
+        // Configura os headers para streaming de áudio
         res.setHeader('Content-Type', 'audio/mpeg');
 
-        // 4. O segredo: o SDK novo retorna um Stream. 
-        // No Node.js, enviamos esse stream direto para a resposta (res)
+        // Envia o stream diretamente para a resposta
         audioStream.pipe(res);
 
     } catch (error) {
-        console.error('Erro detalhado ElevenLabs:', error);
+        console.error('Erro detalhado ElevenLabs:', error.message);
         res.status(500).json({ 
             error: 'Erro ao gerar áudio', 
             detalhes: error.message 
         });
     }
+});
+
+// --- INICIALIZAÇÃO (CORRIGIDA PARA RENDER) ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Servidor Lumina rodando na porta ${PORT}`);
 });
