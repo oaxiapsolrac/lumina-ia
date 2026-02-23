@@ -132,31 +132,34 @@ app.post('/speak', async (req, res) => {
         const { text } = req.body;
         if (!text) return res.status(400).json({ error: 'Texto obrigatório' });
 
-        console.log("Gerando áudio para:", text.substring(0, 30) + "...");
+        console.log("Gerando áudio via ElevenLabs...");
 
-        // Remova caracteres especiais que podem travar a voz
+        // 1. Limpeza simples de Markdown
         const cleanText = text.replace(/[*#_`]/g, '');
 
-        const audio = await client.generate({
-            voice: "mPDAoQyGzxBSkE0OAOKw", // Verifique se este ID está correto no seu painel ElevenLabs
-            model_id: "eleven_multilingual_v2",
-            text: cleanText,
-        });
+        // 2. Usando o método NOVO: textToSpeech.convert
+        // Note que agora usamos modelId (camelCase) e não model_id
+        const audioStream = await client.textToSpeech.convert(
+            "wXwzHFLHnXex5h3JPBXA", // ID da voz (Bella ou a sua preferida)
+            {
+                text: cleanText,
+                modelId: "eleven_multilingual_v2", // Mudou de model_id para modelId
+                outputFormat: "mp3_44100_128",     // Opcional: define a qualidade
+            }
+        );
 
-        // Configura os headers corretamente para o navegador entender que é áudio
+        // 3. Configura os headers para o navegador reconhecer o áudio
         res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Transfer-Encoding', 'chunked');
 
-        // Envia o stream diretamente para a resposta
-        audio.pipe(res);
+        // 4. O segredo: o SDK novo retorna um Stream. 
+        // No Node.js, enviamos esse stream direto para a resposta (res)
+        audioStream.pipe(res);
 
     } catch (error) {
         console.error('Erro detalhado ElevenLabs:', error);
-        res.status(500).json({ error: 'Erro ao gerar áudio', detalhes: error.message });
+        res.status(500).json({ 
+            error: 'Erro ao gerar áudio', 
+            detalhes: error.message 
+        });
     }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });

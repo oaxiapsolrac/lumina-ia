@@ -312,44 +312,47 @@
 
     // --- [MUDANÇA PRINCIPAL] FUNÇÃO DE FALA VIA BACKEND ---
     async function speakText(text) {
-        if (!text) return;
+        if (!voiceEnabled || !text) return;
 
-        console.log("Solicitando áudio ao servidor...");
+        console.log("Solicitando áudio ao ElevenLabs...");
+        
+        // Para qualquer áudio que esteja tocando agora
+        stopAudio();
+
+        // Limpa o texto: Remove negritos (**), títulos (#), listas (*) para a voz ficar natural
+        const cleanText = text.replace(/[*#_`]/g, '').trim();
 
         try {
-            const response = await fetch('https://lumina-backend-zsak.onrender.com/speak', { // Verifique se a URL está correta (localhost ou Render)
+            const response = await fetch(AUDIO_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text })
+                body: JSON.stringify({ text: cleanText })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`Erro no servidor: ${errorData.detalhes || response.statusText}`);
-            }
+            if (!response.ok) throw new Error("Erro na resposta do servidor de áudio");
 
-            const blob = await response.blob();
-            console.log("Áudio recebido, tamanho do blob:", blob.size);
-
-            if (blob.size < 100) {
-                throw new Error("O áudio retornado está vazio ou é muito curto.");
-            }
-
-            const audioUrl = URL.createObjectURL(blob);
-            const audio = new Audio(audioUrl);
+            // O backend envia o arquivo de áudio, então pegamos como BLOB
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
             
-            // Tenta tocar o áudio
-            await audio.play();
-            console.log("Áudio iniciado com sucesso!");
+            // Criamos o elemento de áudio e guardamos na variável global para poder parar depois
+            currentAudio = new Audio(audioUrl);
+            
+            // Toca o áudio
+            await currentAudio.play();
 
-            audio.onended = () => URL.revokeObjectURL(audioUrl);
+            // Limpa a memória do navegador quando o áudio terminar
+            currentAudio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                currentAudio = null;
+            };
 
         } catch (error) {
-            console.error("Falha na reprodução de voz:", error);
+            console.error("Falha ElevenLabs:", error);
             
-            // Fallback: Se tudo falhar, usa a voz do Google do navegador
-            console.log("Usando voz de reserva (Navegador)...");
-            const utterance = new SpeechSynthesisUtterance(text);
+            // FALLBACK: Se o ElevenLabs falhar (ex: sem créditos), usa a voz nativa do navegador
+            console.log("Usando voz de reserva (Nativo)...");
+            const utterance = new SpeechSynthesisUtterance(cleanText);
             utterance.lang = 'pt-BR';
             window.speechSynthesis.speak(utterance);
         }
@@ -396,7 +399,8 @@
         // Chama a nova função de voz
         speakText(reply);
 
-        const msg = document.createElement('div'); msg.className = 'message';
+        const msg = document.createElement('div'); 
+        msg.className = 'message';
         msg.innerHTML = `<div class="avatar"></div><div class="bubble"></div>`;
         chatContent.appendChild(msg);
         typeWriter(marked.parse(reply), msg.querySelector('.bubble'));
