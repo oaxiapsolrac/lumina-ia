@@ -138,7 +138,7 @@ app.post('/speak', async (req, res) => {
         const cleanText = text.replace(/[*#_`]/g, '');
 
         const audio = await client.generate({
-            voice: "lxYfHSkYm1EzQzGhdbfc", // Verifique se este ID está correto no seu painel ElevenLabs
+            voice: "mPDAoQyGzxBSkE0OAOKw", // Verifique se este ID está correto no seu painel ElevenLabs
             model_id: "eleven_multilingual_v2",
             text: cleanText,
         });
