@@ -111,7 +111,7 @@ app.post('/chat', async (req, res) => {
                 { role: "user", content: mensagem }
             ],
             // Mantido exatamente o seu modelo original
-            model: "meta-llama/llama-3.3-70b-versatile", 
+            model: "meta-llama/llama-4-maverick-17b-128e-instruct", 
             temperature: 0.5, 
             max_tokens: 1024,
         });
