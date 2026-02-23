@@ -13,8 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.3.1",
-    "elevenlabs": "^1.59.0",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "groq-sdk": "^0.3.3"
   }

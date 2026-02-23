@@ -1,11 +1,9 @@
-
 // backend/server.js
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const Groq = require("groq-sdk"); 
 const conhecimentoEllas = require('./conhecimento'); 
-const { ElevenLabsClient } = require('elevenlabs'); 
 
 // Inicializa o dotenv
 dotenv.config();
@@ -14,33 +12,27 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Configuração das API Keys
+// Configuração da API Key
 const apiKey = process.env.GROQ_API_KEY;
-const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
 
-// Verificação de segurança das chaves
 if (!apiKey) {
-    console.error("❌ ERRO: GROQ_API_KEY não encontrada!");
-}
-if (!elevenLabsApiKey) {
-    console.error("❌ ERRO: ELEVENLABS_API_KEY não encontrada!");
+    console.error("❌ ERRO CRÍTICO: Chave API (GROQ_API_KEY) não encontrada!");
+    process.exit(1); 
 }
 
-// Inicializa os clientes
+// Inicializa o cliente Groq
 const groq = new Groq({ apiKey: apiKey });
-const client = new ElevenLabsClient({ apiKey: elevenLabsApiKey });
 
-// Rota de Teste (Health Check para o Render)
-app.get('/', (req, res) => {
-    res.send("Servidor da Lumina está online!");
-});
+console.log("✅ Servidor iniciado. Aguardando requisições...");
 
-// --- ROTA DO CHAT (GROQ) ---
 app.post('/chat', async (req, res) => {
     try {
         const { mensagem } = req.body;
+        
+        // Formata a base de dados como string
         const dadosContexto = JSON.stringify(conhecimentoEllas, null, 2);
 
+        // --- SYSTEM PROMPT PRO (COMPLETO) ---
         const systemInstruction = `
         <system_directive>
             <role_definition>
@@ -103,63 +95,30 @@ app.post('/chat', async (req, res) => {
             </formatting_guide>
         </system_directive>
         `;
+
+        // Chamada à API da Groq
         const chatCompletion = await groq.chat.completions.create({
             messages: [
                 { role: "system", content: systemInstruction },
                 { role: "user", content: mensagem }
             ],
-            model: "meta-llama/llama-4-maverick-17b-128e-instruct", 
+            // Mantido exatamente o seu modelo original
+            model: "meta-llama/llama-4-scout-17b-16e-instruct", 
             temperature: 0.5, 
             max_tokens: 1024,
         });
 
         const respostaTexto = chatCompletion.choices[0]?.message?.content || "Desculpe, não consegui processar a resposta.";
+
         res.json({ resposta: respostaTexto });
 
     } catch (error) {
-        console.error("Erro no Groq:", error);
-        res.status(500).json({ resposta: "Erro ao conectar com a Lumina. Tente novamente." });
+        console.error("Erro no processamento:", error);
+        res.status(500).json({ resposta: "Erro ao conectar com a Lumina (Groq). Tente novamente." });
     }
 });
 
-// --- ROTA DE ÁUDIO (ELEVENLABS) CORRIGIDA ---
-app.post('/speak', async (req, res) => {
-    try {
-        const { text } = req.body;
-        if (!text) return res.status(400).json({ error: 'Texto obrigatório' });
-
-        console.log("Gerando áudio via ElevenLabs...");
-
-        // Limpa Markdown do texto antes de falar
-        const cleanText = text.replace(/[*#_`]/g, '');
-
-        // Chamada usando o padrão novo do SDK
-        const audioStream = await client.textToSpeech.convert(
-            "wXwzHFLHnXex5h3JPBXA", // ID da voz Bella
-            {
-                text: cleanText,
-                modelId: "eleven_multilingual_v2",
-                outputFormat: "mp3_44100_128",
-            }
-        );
-
-        // Configura os headers para streaming de áudio
-        res.setHeader('Content-Type', 'audio/mpeg');
-
-        // Envia o stream diretamente para a resposta
-        audioStream.pipe(res);
-
-    } catch (error) {
-        console.error('Erro detalhado ElevenLabs:', error.message);
-        res.status(500).json({ 
-            error: 'Erro ao gerar áudio', 
-            detalhes: error.message 
-        });
-    }
-});
-
-// --- INICIALIZAÇÃO (CORRIGIDA PARA RENDER) ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Servidor Lumina rodando na porta ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });

@@ -183,11 +183,8 @@
 
 <script>
     const API_URL = 'https://lumina-backend-zsak.onrender.com/chat';
-    const AUDIO_URL = 'https://lumina-backend-zsak.onrender.com/speak'; // Nova rota do seu backend
-    
     let voiceEnabled = true;
     let currentConversationId = null;
-    let currentAudio = null; // Variável para controlar o player de áudio
 
     const input = document.getElementById('prompt');
     const send = document.getElementById('send');
@@ -197,18 +194,7 @@
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('overlay');
 
-    // Função para parar qualquer áudio tocando (ElevenLabs ou Nativo)
-    function stopAudio() {
-        if (currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-            currentAudio = null;
-        }
-        window.speechSynthesis.cancel();
-    }
-
     function destravarAudio() {
-        // Truque para iOS/Mobile permitir áudio
         const kickstart = new SpeechSynthesisUtterance("");
         window.speechSynthesis.speak(kickstart);
     }
@@ -219,17 +205,14 @@
         voiceEnabled = !voiceEnabled;
         e.target.textContent = voiceEnabled ? '🔊' : '🔈';
         e.target.style.color = voiceEnabled ? '#ff00d4' : '#b399cc';
-        if (!voiceEnabled) stopAudio();
+        if (!voiceEnabled) window.speechSynthesis.cancel();
     });
 
     // --- MICROFONE ---
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
       recognition.lang = 'pt-BR';
-      recognition.onstart = () => {
-          stopAudio(); // Para o áudio se o usuário começar a falar
-          document.getElementById('micBtn').classList.add('recording');
-      };
+      recognition.onstart = () => document.getElementById('micBtn').classList.add('recording');
       recognition.onend = () => document.getElementById('micBtn').classList.remove('recording');
       recognition.onresult = (e) => { input.value = e.results[0][0].transcript; send.disabled = false; input.focus(); };
       document.getElementById('micBtn').addEventListener('click', () => { destravarAudio(); try{recognition.start()}catch(e){recognition.stop()} });
@@ -262,14 +245,12 @@
     function loadConversation(id) {
       const conv = getHistory().find(x => x.id === id);
       if (!conv) return;
-      stopAudio(); // Para áudio se mudar de conversa
       currentConversationId = id;
       chatContent.innerHTML = '';
       conv.messages.forEach(m => appendMessage(m.role, m.text, false));
     }
 
     function startNewConversation() {
-      stopAudio();
       currentConversationId = null;
       chatContent.innerHTML = '';
       appendMessage('assistant', 'Olá! Sou a LUMINA. Pergunte-me sobre mulheres na tecnologia!');
@@ -310,52 +291,13 @@
       }, 10);
     }
 
-    // --- [MUDANÇA PRINCIPAL] FUNÇÃO DE FALA VIA BACKEND ---
-    async function speakText(text) {
-        if (!voiceEnabled || !text) return;
-
-        console.log("Solicitando áudio ao ElevenLabs...");
-        
-        // Para qualquer áudio que esteja tocando agora
-        stopAudio();
-
-        // Limpa o texto: Remove negritos (**), títulos (#), listas (*) para a voz ficar natural
-        const cleanText = text.replace(/[*#_`]/g, '').trim();
-
-        try {
-            const response = await fetch(AUDIO_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: cleanText })
-            });
-
-            if (!response.ok) throw new Error("Erro na resposta do servidor de áudio");
-
-            // O backend envia o arquivo de áudio, então pegamos como BLOB
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            
-            // Criamos o elemento de áudio e guardamos na variável global para poder parar depois
-            currentAudio = new Audio(audioUrl);
-            
-            // Toca o áudio
-            await currentAudio.play();
-
-            // Limpa a memória do navegador quando o áudio terminar
-            currentAudio.onended = () => {
-                URL.revokeObjectURL(audioUrl);
-                currentAudio = null;
-            };
-
-        } catch (error) {
-            console.error("Falha ElevenLabs:", error);
-            
-            // FALLBACK: Se o ElevenLabs falhar (ex: sem créditos), usa a voz nativa do navegador
-            console.log("Usando voz de reserva (Nativo)...");
-            const utterance = new SpeechSynthesisUtterance(cleanText);
-            utterance.lang = 'pt-BR';
-            window.speechSynthesis.speak(utterance);
-        }
+    function speakText(t) {
+      if (!voiceEnabled) return;
+      window.speechSynthesis.cancel(); 
+      const u = new SpeechSynthesisUtterance(t.replace(/[*#_`]/g, '')); u.lang = 'pt-BR';
+      u.rate = 1.1;  // 1.0 é o normal. 1.1 é um pouco mais rápido.
+      // --------------------------------
+      window.speechSynthesis.speak(u);
     }
 
     // --- EVENTOS ---
@@ -369,8 +311,6 @@
 
     send.onclick = async () => {
       destravarAudio();
-      stopAudio(); // Para a Lumina se ela estiver falando quando você enviar msg
-      
       const text = input.value.trim();
       if (!text) return;
 
@@ -395,12 +335,9 @@
         typingEl.remove();
         const reply = data.resposta;
         
-        
-        // Chama a nova função de voz
         speakText(reply);
 
-        const msg = document.createElement('div'); 
-        msg.className = 'message';
+        const msg = document.createElement('div'); msg.className = 'message';
         msg.innerHTML = `<div class="avatar"></div><div class="bubble"></div>`;
         chatContent.appendChild(msg);
         typeWriter(marked.parse(reply), msg.querySelector('.bubble'));
@@ -422,8 +359,7 @@
     document.body.addEventListener('click', function() {
         const kickstart = new SpeechSynthesisUtterance("");
         window.speechSynthesis.speak(kickstart);
-    }, { once: true }); 
-    
+    }, { once: true }); // "once: true" garante que isso rode apenas no primeiro clique
     // Início
     loadHistoryList();
     startNewConversation();
