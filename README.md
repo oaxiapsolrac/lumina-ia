@@ -34,7 +34,7 @@ Passo a Passo
 Clonar o repositório:
 
 Bash
-git clone https://github.com/seu-usuario/lumina-ellas.git
+git clone https://github.com/oaxiapsolrac/lumina-ia
 cd lumina-ellas
 Instalar dependências:
 
