@@ -103,7 +103,7 @@ app.post('/chat', async (req, res) => {
                 { role: "user", content: mensagem }
             ],
             // Mantido exatamente o seu modelo original
-            model: "qwen3.6-27b", 
+            model: "groq/compound-mini", 
             temperature: 0.5, 
             max_tokens: 1024,
         });
