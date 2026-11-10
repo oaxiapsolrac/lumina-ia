@@ -1,0 +1,16 @@
+# Dependências
+node_modules/
+backend/node_modules/
+
+# Variáveis de ambiente e segredos
+.env
+.env.*
+backend/.env
+backend/.env.*
+!backend/.env.example
+!.env.example
+
+# Sistema e caches temporários
+.DS_Store
+*.log
+
