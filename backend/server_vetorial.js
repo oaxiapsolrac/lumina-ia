@@ -1022,10 +1022,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 app.listen(PORT, () => {
+    const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || (process.env.RENDER ? "https://lumina-backend-zsak.onrender.com" : `http://localhost:${PORT}`);
     console.log(`\n======================================================`);
     console.log(`🚀 SERVIDOR VETORIAL DA LUMINA RODANDO NA PORTA ${PORT}`);
-    console.log(`📡 URL Base: http://localhost:${PORT}`);
-    console.log(`📊 Endpoint de Estatísticas: http://localhost:${PORT}/stats`);
-    console.log(`💬 Endpoint RAG Vetorial: http://localhost:${PORT}/chat`);
+    console.log(`📡 URL Base: ${BASE_URL}`);
+    console.log(`📊 Endpoint de Estatísticas: ${BASE_URL}/stats`);
+    console.log(`💬 Endpoint RAG Vetorial: ${BASE_URL}/chat`);
     console.log(`======================================================\n`);
 });
