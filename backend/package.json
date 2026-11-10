@@ -7,13 +7,11 @@
   "scripts": {
     "start": "node server_vetorial.js",
     "test:cli": "node teste_busca_cli.js",
-    "reindex": "node -e 'import(\"./vector_engine.js\").then(m => m.vectorEngine.reindex())'"
+    "parse:ttl": "node ttl_parser.js",
+    "reindex": "node -e 'import(\"dotenv/config\").then(() => import(\"./vector_engine.js\")).then(m => m.vectorEngine.reindex()).then(r => console.log(r))'"
   },
   "dependencies": {
-    "@langchain/core": "^0.1.61",
-    "@langchain/groq": "^0.0.11",
     "@xenova/transformers": "^2.17.2",
-    "axios": "^1.6.8",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",

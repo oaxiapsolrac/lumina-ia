@@ -1,16 +1,34 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { pipeline } from '@xenova/transformers';
-import { parseBackupEllasTTL } from './ttl_parser.js';
+import { parseBackupEllasTTL, classificarRuido, limparPais } from './ttl_parser.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const CACHE_FILE = path.join(__dirname, 'vector_store_cache.json');
-const TTL_FILE = path.join(__dirname, 'backup_ellas.ttl');
+const CACHE_BACKUP_FILE = path.join(__dirname, 'vector_store_cache.anterior.json');
 const BASE_TTL_JSON = path.join(__dirname, 'base_ellas_ttl_completa.json');
-const CONHECIMENTO_FILE = path.join(__dirname, '../conhecimento.js');
+
+// Caminhos candidatos, em ordem de prioridade (variável de ambiente primeiro).
+// O projeto irmão (teste-lumina-1artigosematec) fica um nível acima e usava '../';
+// aqui os arquivos estão dentro de backend/, então a base curada fica dois níveis acima.
+function primeiroExistente(candidatos) {
+    return candidatos.filter(Boolean).map(p => path.resolve(__dirname, p)).find(p => fs.existsSync(p)) || null;
+}
+
+const caminhoTTL = () => primeiroExistente([
+    process.env.TTL_PATH,
+    'backup_ellas.ttl'
+]);
+
+const caminhoConhecimento = () => primeiroExistente([
+    process.env.CONHECIMENTO_PATH,
+    'conhecimento.js',
+    '../conhecimento.js',
+    '../../conhecimento.js'
+]);
 
 class VectorEngine {
     constructor() {
@@ -18,6 +36,7 @@ class VectorEngine {
         this.documents = [];
         this.isInitialized = false;
         this.dimensions = 384;
+        this.reindexEmAndamento = null;
     }
 
     async init() {
@@ -62,23 +81,41 @@ class VectorEngine {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
+    // Evita duas reindexações simultâneas (ex.: npm run reindex + POST /reindex)
     async reindex() {
-        console.log("🔄 Reindexando base de dados COMPLETA a partir do backup_ellas.ttl (5.5M linhas)...");
+        if (this.reindexEmAndamento) return this.reindexEmAndamento;
+        this.reindexEmAndamento = this._reindex().finally(() => { this.reindexEmAndamento = null; });
+        return this.reindexEmAndamento;
+    }
+
+    async _reindex() {
+        console.log("🔄 Reindexando a base vetorial...");
         const rawDocs = [];
         const seenKeys = new Set();
+        const resumo = { ontologia: 0, ruidoDescartado: 0, inep: 0, soaas: 0, curado: 0, fontesAusentes: [] };
 
-        // 1. Ingestão profunda do backup_ellas.ttl via ttl_parser
+        // 1. Ontologia ELLAS (JSON gerado pelo ttl_parser.js, ou o próprio TTL se o JSON não existir)
         let docsTTL = [];
         if (fs.existsSync(BASE_TTL_JSON)) {
             docsTTL = JSON.parse(fs.readFileSync(BASE_TTL_JSON, 'utf-8'));
-        } else if (fs.existsSync(TTL_FILE)) {
-            docsTTL = await parseBackupEllasTTL();
+        } else if (caminhoTTL()) {
+            docsTTL = await parseBackupEllasTTL({ entrada: caminhoTTL() });
+        } else {
+            resumo.fontesAusentes.push('ontologia (base_ellas_ttl_completa.json / TTL_PATH)');
         }
 
         for (const doc of docsTTL) {
+            // Defesa extra para JSONs gerados pela versão antiga do parser
+            if (classificarRuido([doc.tipo || doc.categoria], doc.nome)) {
+                resumo.ruidoDescartado++;
+                continue;
+            }
+            doc.pais = limparPais(doc.pais) || "América Latina";
+
             const key = `${doc.pais}-${doc.nome}`.toLowerCase();
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
+            resumo.ontologia++;
 
             let detalhesEnriquecidos = doc.detalhes || `Iniciativa ou conceito mapeado no(a) ${doc.pais} pelo Projeto ELLAS (UFMT).`;
             const nomeLower = doc.nome.toLowerCase();
@@ -118,11 +155,14 @@ class VectorEngine {
                     seenKeys.add(key);
 
                     rawDocs.push(doc);
+                    resumo.inep++;
                 }
                 console.log(`✅ ${docsINEP.length} estatísticas do Censo INEP/MEC integradas.`);
             } catch (e) {
                 console.warn("⚠️ Aviso ao carregar base_inep_extraida.json:", e.message);
             }
+        } else {
+            resumo.fontesAusentes.push('INEP (base_inep_extraida.json)');
         }
 
         // 3. Ingestão de Conhecimento Semântico do SOAAS
@@ -136,6 +176,7 @@ class VectorEngine {
                     seenKeys.add(key);
 
                     rawDocs.push(doc);
+                    resumo.soaas++;
                 }
                 console.log(`✅ ${docsSOAAS.length} registros do repositório SOAAS integrados.`);
             } catch (e) {
@@ -144,8 +185,12 @@ class VectorEngine {
         }
 
         // 4. Ingestão da Base Curada (conhecimento.js) com Biografias, Fatores e Políticas Detalhadas
+        const arquivoConhecimento = caminhoConhecimento();
+        if (!arquivoConhecimento) {
+            resumo.fontesAusentes.push('base curada (conhecimento.js / CONHECIMENTO_PATH)');
+        }
         try {
-            const conhecimentoEllas = (await import('../conhecimento.js')).default;
+            const conhecimentoEllas = arquivoConhecimento ? (await import(pathToFileURL(arquivoConhecimento).href)).default : null;
             if (Array.isArray(conhecimentoEllas)) {
                 for (const item of conhecimentoEllas) {
                     const nome = item.nome || item.fator || item.contexto || "Dado ELLAS";
@@ -174,12 +219,20 @@ class VectorEngine {
                         detalhes: detalhes,
                         texto: textoIndexacao
                     });
+                    resumo.curado++;
                 }
+                console.log(`✅ ${resumo.curado} itens da base curada integrados (${arquivoConhecimento}).`);
             }
         } catch (err) {
             console.warn("⚠️ Aviso ao carregar conhecimento.js:", err.message);
         }
 
+        if (resumo.fontesAusentes.length > 0) {
+            console.warn(`⚠️ Fontes não encontradas (ficarão fora do índice): ${resumo.fontesAusentes.join('; ')}`);
+        }
+        if (resumo.ruidoDescartado > 0) {
+            console.log(`🧹 ${resumo.ruidoDescartado} nós de esquema/vocabulário da ontologia descartados.`);
+        }
         console.log(`📊 Total de ${rawDocs.length} documentos para vetorização. Gerando embeddings...`);
 
         const indexedDocs = [];
@@ -201,10 +254,17 @@ class VectorEngine {
         this.documents = indexedDocs;
         this.isInitialized = true;
 
-        // Salva cache em disco
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(indexedDocs, null, 2));
+        // Guarda o cache anterior antes de sobrescrever, para permitir voltar atrás
+        if (fs.existsSync(CACHE_FILE)) {
+            fs.copyFileSync(CACHE_FILE, CACHE_BACKUP_FILE);
+            console.log(`🗂️ Cache anterior copiado para ${CACHE_BACKUP_FILE}`);
+        }
+        // Escreve em arquivo temporário e renomeia, para não deixar um cache corrompido se o processo cair no meio
+        const tmp = `${CACHE_FILE}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(indexedDocs, null, 2));
+        fs.renameSync(tmp, CACHE_FILE);
         console.log(`💾 Cache do banco vetorial salvo com sucesso em ${CACHE_FILE}!`);
-        return this.documents.length;
+        return { totalDocumentos: this.documents.length, ...resumo };
     }
 
     async search(query, options = {}) {

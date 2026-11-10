@@ -196,7 +196,8 @@ app.get('/', (req, res) => {
             buscaVetorial: "POST /search",
             chatRAG: "POST /chat",
             chatStream: "POST /chat/stream",
-            reindex: "POST /reindex"
+            tts: "POST /tts",
+            reindex: "POST /reindex (requer Authorization: Bearer ADMIN_TOKEN)"
         }
     });
 });
@@ -214,12 +215,17 @@ app.get('/stats', (req, res) => {
 // 3. Busca Vetorial Pura (Semantic Search sem LLM)
 app.post('/search', async (req, res) => {
     try {
-        const { query, topK = 5, pais = null, categoria = null, minScore = 0.2 } = req.body;
+        const { query, topK = 5, pais = null, categoria = null, minScore = 0.2 } = req.body || {};
         if (!query || typeof query !== 'string') {
             return res.status(400).json({ erro: "Campo 'query' é obrigatório." });
         }
 
-        const resultados = await vectorEngine.search(query, { topK, pais, categoria, minScore });
+        const resultados = await vectorEngine.search(query, {
+            topK: lerTopK(topK, 5),
+            pais: lerPais(pais),
+            categoria: lerPais(categoria),
+            minScore: Number.isFinite(Number(minScore)) ? Number(minScore) : 0.2
+        });
         res.json(resultados);
     } catch (error) {
         console.error("Erro na busca vetorial:", error);
@@ -227,52 +233,102 @@ app.post('/search', async (req, res) => {
     }
 });
 
-// 4. RAG Completo com Memória Multi-Turn (Busca Vetorial + Inferência Groq)
-app.post('/chat', async (req, res) => {
-    const inicioTotal = Date.now();
+// Reindexação da base vetorial (lenta e sobrescreve o cache): exige ADMIN_TOKEN no .env
+function tokenAdminValido(req) {
+    const esperado = process.env.ADMIN_TOKEN;
+    if (!esperado) return false;
+    const recebido = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const a = Buffer.from(recebido);
+    const b = Buffer.from(esperado);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+app.post('/reindex', async (req, res) => {
+    if (!process.env.ADMIN_TOKEN) {
+        return res.status(403).json({ erro: "Reindexação remota desabilitada. Defina ADMIN_TOKEN no .env ou use 'npm run reindex'." });
+    }
+    if (!tokenAdminValido(req)) {
+        return res.status(401).json({ erro: "Token de administrador inválido." });
+    }
     try {
-        const { mensagem = "", topK = 4, pais = null, historico = [], modelo = "groq", imagens = [], arquivos = [] } = req.body;
-        const parsedTopK = parseInt(topK, 10) || 4;
+        const inicio = Date.now();
+        const resumo = await vectorEngine.reindex();
+        res.json({ status: "ok", tempoMs: Date.now() - inicio, ...resumo });
+    } catch (error) {
+        console.error("Erro na reindexação:", error);
+        res.status(500).json({ erro: "Falha ao reindexar.", detalhes: error.message });
+    }
+});
 
-        if (!mensagem && (!imagens || imagens.length === 0) && (!arquivos || arquivos.length === 0)) {
-            return res.status(400).json({ resposta: "Mensagem ou anexo inválido." });
-        }
-
-        // FASE 1: Recontextualização de Query para Busca Vetorial (Conversational Retrieval)
-        let queryBusca = mensagem || "Iniciativas e dados de mulheres em STEM na América Latina";
-
-        // Se houver histórico anterior e a mensagem for curta/de continuidade
-        if (historico && Array.isArray(historico) && historico.length > 0 && mensagem) {
-            try {
-                const ultimasMensagens = historico.slice(-4).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
-                const recontextCompletion = await groq.chat.completions.create({
-                    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-                    messages: [
-                        {
-                            role: "system",
-                            content: `Você é um reescritor de consultas de busca para um banco vetorial sobre mulheres em STEM.
+// Reescreve mensagens de continuação ("me fale mais") como consulta autônoma para a busca vetorial
+async function recontextualizarQuery(mensagem, historico) {
+    if (!GROQ_API_KEY || !mensagem || !Array.isArray(historico) || historico.length === 0) return mensagem;
+    try {
+        const ultimasMensagens = historico.slice(-4).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
+        const recontextCompletion = await groq.chat.completions.create({
+            model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+            messages: [
+                {
+                    role: "system",
+                    content: `Você é um reescritor de consultas de busca para um banco vetorial sobre mulheres em STEM.
 Dada a conversa anterior e a nova mensagem do usuário, gere UMA ÚNICA frase de busca autônoma e direta que capture o assunto real que o usuário quer pesquisar.
 NÃO responda à pergunta. Apenas retorne a frase de busca.
 Exemplo:
 Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | Nova mensagem: "me traga mais" -> "biografia trajetória e carreira de Sonia Guimarães"`
-                        },
-                        {
-                            role: "user",
-                            content: `Histórico recente:\n${ultimasMensagens}\n\nNova mensagem do usuário: "${mensagem}"`
-                        }
-                    ],
-                    temperature: 0.1,
-                    max_tokens: 60
-                });
-                const queryReescrita = recontextCompletion.choices[0]?.message?.content?.trim();
-                if (queryReescrita && queryReescrita.length > 3) {
-                    queryBusca = queryReescrita.replace(/^["']|["']$/g, '');
-                    console.log(`🔄 Query Recontextualizada: "${mensagem}" ➔ "${queryBusca}"`);
+                },
+                {
+                    role: "user",
+                    content: `Histórico recente:\n${ultimasMensagens}\n\nNova mensagem do usuário: "${mensagem}"`
                 }
-            } catch (e) {
-                console.warn("⚠️ Aviso ao recontextualizar query:", e.message);
-            }
+            ],
+            temperature: 0.1,
+            max_tokens: 60
+        });
+        const queryReescrita = recontextCompletion.choices[0]?.message?.content?.trim();
+        if (queryReescrita && queryReescrita.length > 3) {
+            const nova = queryReescrita.replace(/^["']|["']$/g, '');
+            console.log(`🔄 Query Recontextualizada: "${mensagem}" ➔ "${nova}"`);
+            return nova;
         }
+    } catch (e) {
+        console.warn("⚠️ Aviso ao recontextualizar query:", e.message);
+    }
+    return mensagem;
+}
+
+// Mensagem final do usuário: texto puro ou partes multimodais (imagem/vídeo/áudio conforme o modelo)
+function montarMensagemUsuario(modelo, mensagem, anexos) {
+    if (anexos.length === 0) return { mensagem: { role: "user", content: mensagem } };
+    const { partes, erro } = montarPartesMidia(modelo, anexos);
+    if (erro) return { erro };
+    partes.push({ type: "text", text: mensagem || "Por favor, analise a imagem ou mídia anexada no contexto de mulheres em STEM." });
+    return { mensagem: { role: "user", content: partes } };
+}
+
+// 4. RAG Completo com Memória Multi-Turn (Busca Vetorial + Inferência Groq)
+app.post('/chat', async (req, res) => {
+    const inicioTotal = Date.now();
+    try {
+        const { mensagem: mensagemBruta = "", topK = 4, pais: paisBruto = null, historico = [], modelo = "groq", imagens = [], arquivos = [] } = req.body || {};
+        const mensagem = typeof mensagemBruta === 'string' ? mensagemBruta : String(mensagemBruta || '');
+        const parsedTopK = lerTopK(topK, 4);
+        const pais = lerPais(paisBruto);
+        const anexos = coletarAnexos(imagens, arquivos);
+
+        if (!mensagem && anexos.length === 0) {
+            return res.status(400).json({ resposta: "Mensagem ou anexo inválido." });
+        }
+
+        // Valida os anexos antes de gastar chamadas de LLM
+        const mensagemUsuario = montarMensagemUsuario(modelo, mensagem, anexos);
+        if (mensagemUsuario.erro) {
+            return res.status(400).json({ resposta: `❌ ${mensagemUsuario.erro}` });
+        }
+
+        // FASE 1: Recontextualização de Query para Busca Vetorial (Conversational Retrieval)
+        const queryBusca = mensagem
+            ? await recontextualizarQuery(mensagem, historico)
+            : "Iniciativas e dados de mulheres em STEM na América Latina";
 
         // FASE 2: Recuperação Vetorial com a Query Recontextualizada
         const busca = await vectorEngine.search(queryBusca, { topK: parsedTopK, pais });
@@ -298,41 +354,14 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
             messagesPayload.push(...historicoValido);
         }
 
-        // Se houver imagens ou arquivos anexados, cria estrutura multimodal compatível
-        if ((imagens && imagens.length > 0) || (arquivos && arquivos.length > 0)) {
-            const userParts = [];
-            if (Array.isArray(imagens)) {
-                for (const img of imagens) {
-                    if (typeof img === 'string' && img.startsWith('data:')) {
-                        userParts.push({
-                            type: "image_url",
-                            image_url: { url: img }
-                        });
-                    }
-                }
-            }
-            if (Array.isArray(arquivos)) {
-                for (const arq of arquivos) {
-                    const url = arq.url || arq.data || (typeof arq === 'string' ? arq : null);
-                    if (url && typeof url === 'string' && url.startsWith('data:')) {
-                        userParts.push({
-                            type: "image_url",
-                            image_url: { url: url }
-                        });
-                    }
-                }
-            }
-            userParts.push({ type: "text", text: mensagem || "Por favor, analise a imagem ou mídia anexada no contexto de mulheres em STEM." });
-            messagesPayload.push({ role: "user", content: userParts });
-        } else {
-            messagesPayload.push({ role: "user", content: mensagem });
-        }
+        // Mensagem atual: texto puro ou imagem/vídeo/áudio no formato aceito pelo modelo (validado acima)
+        messagesPayload.push(mensagemUsuario.mensagem);
 
         const inicioLLM = Date.now();
         let respostaTexto = "";
         let modeloIdentificado = modelo;
 
-        // Roteamento para os 6 Modelos de IA
+        // Roteamento para os Modelos de IA
         if (modelo === 'gemini') {
             const geminiApiKey = process.env.GEMINI_API_KEY;
             const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
@@ -341,7 +370,8 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
                 return res.status(400).json({ resposta: "❌ GEMINI_API_KEY não configurada no arquivo .env." });
             }
 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+            // Chave no cabeçalho (não na URL) para não aparecer em logs de proxy
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
             const geminiContents = [];
 
             // Converte mensagens para formato Gemini
@@ -354,7 +384,7 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
 
             const geminiRes = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiApiKey },
                 body: JSON.stringify({
                     system_instruction: { parts: [{ text: systemPrompt }] },
                     contents: geminiContents,
@@ -708,9 +738,20 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
 // 5. RAG com Streaming em Tempo Real (Server-Sent Events)
 app.post('/chat/stream', async (req, res) => {
     try {
-        const { mensagem, modelo = 'groq', imagens, arquivos, historico = [], pais = null, topK = 4 } = req.body;
-        if (!mensagem && (!imagens || imagens.length === 0)) {
-            return res.status(400).send("Mensagem ou mídia obrigatória");
+        const { mensagem: mensagemBruta = "", modelo = 'groq', imagens, arquivos, historico = [], pais: paisBruto = null, topK = 4 } = req.body || {};
+        const mensagem = typeof mensagemBruta === 'string' ? mensagemBruta : String(mensagemBruta || '');
+        const pais = lerPais(paisBruto);
+        const parsedTopK = lerTopK(topK, 4);
+        const anexos = coletarAnexos(imagens, arquivos);
+
+        if (!mensagem && anexos.length === 0) {
+            return res.status(400).json({ erro: "Mensagem ou mídia obrigatória." });
+        }
+
+        // Erros de validação saem como JSON antes de abrir o SSE
+        const mensagemUsuario = montarMensagemUsuario(modelo, mensagem, anexos);
+        if (mensagemUsuario.erro) {
+            return res.status(400).json({ erro: mensagemUsuario.erro });
         }
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -719,13 +760,11 @@ app.post('/chat/stream', async (req, res) => {
         res.flushHeaders?.();
 
         const inicioTotal = Date.now();
-        const parsedTopK = parseInt(topK, 10) || 4;
 
-        // FASE 1: Busca Vetorial
-        let queryBusca = mensagem || "";
-        if (!queryBusca && (imagens || arquivos)) {
-            queryBusca = "mulheres latino-americanas ciência tecnologia liderança igualdade de gênero iniciativas";
-        }
+        // FASE 1: Recontextualização da pergunta (igual ao /chat) e busca vetorial
+        const queryBusca = mensagem
+            ? await recontextualizarQuery(mensagem, historico)
+            : "mulheres latino-americanas ciência tecnologia liderança igualdade de gênero iniciativas";
 
         const busca = await vectorEngine.search(queryBusca, { topK: parsedTopK, pais });
         const docs = busca.resultados;
@@ -738,6 +777,7 @@ app.post('/chat/stream', async (req, res) => {
         else if (modelo === 'nemotron-3-nano-omni') modeloDisplay = "Nemotron 3 Nano Omni 30B (NVIDIA • Multimodal)";
         else if (modelo === 'nemotron-3-super-120b') modeloDisplay = "Nemotron 3.5 Super VL 120B (NVIDIA)";
         else if (modelo === 'gpt-oss-20b') modeloDisplay = "GPT-OSS 20B (NVIDIA)";
+        else if (modelo === 'gpt-oss-120b' || modelo === 'gpt-oss-120b-nvidia' || modelo === 'nvidia-gpt-oss-120b') modeloDisplay = "GPT-OSS 120B (NVIDIA)";
         else if (modelo === 'phi-3-mini') modeloDisplay = "Phi-3-mini (Local Ollama)";
         else if (modelo === 'gemma-2-2b') modeloDisplay = "Gemma 2 2B (Local Ollama)";
 
@@ -753,29 +793,8 @@ app.post('/chat/stream', async (req, res) => {
             }));
             messagesPayload.push(...historicoValido);
         }
-        // Suporte a anexos de imagem (multimodal) também no streaming
-        if ((imagens && imagens.length > 0) || (arquivos && arquivos.length > 0)) {
-            const userParts = [];
-            if (Array.isArray(imagens)) {
-                for (const img of imagens) {
-                    if (typeof img === 'string' && img.startsWith('data:')) {
-                        userParts.push({ type: "image_url", image_url: { url: img } });
-                    }
-                }
-            }
-            if (Array.isArray(arquivos)) {
-                for (const arq of arquivos) {
-                    const url = arq.url || arq.data || (typeof arq === 'string' ? arq : null);
-                    if (url && typeof url === 'string' && url.startsWith('data:')) {
-                        userParts.push({ type: "image_url", image_url: { url: url } });
-                    }
-                }
-            }
-            userParts.push({ type: "text", text: mensagem || "Por favor, analise a imagem ou mídia anexada no contexto de mulheres em STEM." });
-            messagesPayload.push({ role: "user", content: userParts });
-        } else {
-            messagesPayload.push({ role: "user", content: mensagem });
-        }
+        // Mensagem atual: texto puro ou imagem/vídeo/áudio no formato aceito pelo modelo (validado acima)
+        messagesPayload.push(mensagemUsuario.mensagem);
 
         // Estima o uso inicial de tokens para o contexto RAG
         const estimatedPromptTokens = estimarTokens(messagesPayload);
@@ -788,6 +807,7 @@ app.post('/chat/stream', async (req, res) => {
         res.write(`event: metadata\ndata: ${JSON.stringify({
             documentosRecuperados: docs,
             modeloUtilizado: modeloDisplay,
+            queryUtilizada: queryBusca,
             contexto: initialContexto,
             metricas: {
                 tempoBuscaVetorialMs: busca.tempoBuscaMs,
@@ -799,8 +819,10 @@ app.post('/chat/stream', async (req, res) => {
             }
         })}\n\n`);
 
-        // Stream via Groq (Padrão e Mais Rápido)
-        if (modelo === 'groq' || modelo === 'gpt-oss-120b') {
+        const inicioLLM = Date.now();
+
+        // Stream via Groq (Padrão e Mais Rápido). "gpt-oss-120b" é a versão NVIDIA e segue para o bloco OpenAI-compatível abaixo.
+        if (modelo === 'groq') {
             const stream = await groq.chat.completions.create({
                 messages: messagesPayload,
                 model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
