@@ -1,0 +1,2847 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Lumina • Chat & Laboratório Vetorial</title>
+  
+  <!-- 1. Fonte Principal e Fallback (Root), Lora (Saudação) e Open Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* 1. Fonte Principal e Fallback (Root) & Variáveis */
+    :root {
+      --bg-main: #131314;
+      --bg-surface: #1e1f20;
+      --bg-surface-hover: #2b2c30;
+      --bg-input: #1e1f20;
+      --user-bubble: #282a2c;
+      
+      /* Tipografia */
+      --font-heading: 'Lora', Georgia, serif;
+      --font-body: 'Open Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      
+      /* Paleta ELLAS */
+      --color-plum: #6C567B;
+      --color-mauve: #C06C84;
+      --color-coral: #F67280;
+      --color-teal: #355C7D;
+      --border-ellas: rgba(108, 86, 123, 0.22);
+      
+      /* Cores Tipográficas com Alto Contraste e Respiro */
+      --text-main: #e3e3e3;         /* 2. Mensagens do Chat / Dark mode sem fadiga ocular */
+      --text-white: #ffffff;        /* 3. Estruturais, Títulos e Botões (#FFFFFF) */
+      --text-muted: #a0a0a0;        /* 4. Metadados e Contexto RAG (#A0A0A0) */
+      --text-details: #c4c7c5;      /* Detalhes de documentos RAG */
+      
+      --border-color: #333538;
+      --accent-pink: #ff00d4;
+      --accent-purple: #9d00ff;
+      --accent-glow: #00ff88;
+      --max-w: 860px;
+      --header-h: 60px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-main);
+      color: var(--text-main);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    /* --- SIDEBAR LATERAL (HISTÓRICO REAL & FILTROS) --- */
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 300px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-color);
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1100;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1050;
+      backdrop-filter: blur(2px);
+    }
+
+    .sidebar-overlay.show {
+      display: block;
+    }
+
+    /* 3. Elementos Estruturais e Interativos */
+    .new-chat-btn {
+      background: #2b2c30;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-white);
+      padding: 12px 16px;
+      border-radius: 9999px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.15s ease;
+    }
+    .new-chat-btn:hover {
+      background: #37393e;
+      color: #fff;
+    }
+
+    /* 4. Metadados e Títulos de Seção */
+    .sidebar-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      line-height: 1.4;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-filters {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .filter-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .filter-item label {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .filter-select {
+      background: #2b2c30;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+      font-weight: 400;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .history-list {
+      list-style: none;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-right: 2px;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      user-select: none;
+    }
+    .history-item:hover {
+      background: #2b2c30;
+      color: var(--text-white);
+    }
+    .history-item.active {
+      background: #37393e;
+      color: var(--text-white);
+      font-weight: 500;
+    }
+
+    .history-item-icon {
+      color: var(--text-muted);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+    .history-item.active .history-item-icon {
+      color: var(--accent-pink);
+    }
+
+    .history-item-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 13.5px;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    .history-delete-btn {
+      opacity: 0;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+      flex-shrink: 0;
+    }
+    .history-item:hover .history-delete-btn {
+      opacity: 1;
+    }
+    .history-delete-btn:hover {
+      background: rgba(255, 68, 68, 0.2);
+      color: #ff4444;
+    }
+
+    .history-empty {
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 24px 12px;
+      line-height: 1.5;
+    }
+
+    /* --- CABEÇALHO SUPERIOR --- */
+    header {
+      height: var(--header-h);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(19, 19, 20, 0.8);
+      backdrop-filter: blur(12px);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .menu-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .menu-btn:hover {
+      background: #2b2c30;
+      color: #fff;
+    }
+
+    /* 3. Nome da Marca no Cabeçalho */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-white);
+      letter-spacing: 0.2px;
+      line-height: 1.5;
+    }
+
+    .sparkle-icon {
+      color: var(--accent-pink);
+      display: flex;
+      align-items: center;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 3. Botão no Canto Superior Direito */
+    .sources-toggle-btn {
+      background: #2b2c30;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-white);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.5;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .sources-toggle-btn:hover {
+      background: #37393e;
+      color: #fff;
+    }
+    .sources-toggle-btn.active {
+      background: #3a2254;
+      border-color: var(--accent-pink);
+      color: #fff;
+    }
+    .sources-count-badge {
+      background: rgba(255, 255, 255, 0.1);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      padding: 1px 6px;
+      border-radius: 8px;
+      color: var(--text-muted);
+    }
+
+    /* BOTÃO E SELETOR DE VOZ DO GOOGLE / NAVEGADOR / DISPOSITIVO */
+    .voice-control-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #2b2c30;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      padding: 3px 6px 3px 4px;
+      transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .voice-control-group.active {
+      background: rgba(192, 108, 132, 0.22);
+      border-color: #C06C84;
+      box-shadow: 0 0 14px rgba(192, 108, 132, 0.3);
+    }
+    .voice-control-group.speaking {
+      animation: audioPulse 1.2s infinite ease-in-out;
+      border-color: #F67280;
+    }
+    .voice-toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.5;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s ease;
+    }
+    .voice-toggle-btn:hover {
+      color: #fff;
+    }
+    .voice-toggle-btn.active {
+      color: #ffffff;
+    }
+    .voice-select {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-radius: 9999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      max-width: 155px;
+      outline: none;
+      cursor: pointer;
+      text-overflow: ellipsis;
+    }
+    .voice-select:hover {
+      border-color: rgba(255, 255, 255, 0.22);
+      color: #fff;
+    }
+    @media (max-width: 640px) {
+      .voice-select {
+        max-width: 95px;
+        font-size: 11px;
+      }
+      #voiceLabel {
+        display: none;
+      }
+    }
+    @keyframes audioPulse {
+      0% { box-shadow: 0 0 4px rgba(246, 114, 128, 0.4); }
+      50% { box-shadow: 0 0 16px rgba(246, 114, 128, 0.9); transform: scale(1.02); }
+      100% { box-shadow: 0 0 4px rgba(246, 114, 128, 0.4); }
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spin-icon {
+      animation: spin 1s linear infinite;
+    }
+
+    .btn-play-audio.playing {
+      color: #F67280;
+      background: rgba(246, 114, 128, 0.22);
+      border-radius: 6px;
+    }
+    .btn-play-audio.loading {
+      color: #C06C84;
+      background: rgba(192, 108, 132, 0.15);
+      border-radius: 6px;
+    }
+
+    /* --- ÁREA PRINCIPAL DO CHAT (TELA CHEIA ESTILO GEMINI) --- */
+    main {
+      position: absolute;
+      top: var(--header-h);
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-main);
+    }
+
+    .content-scroll {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 20px 140px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-container {
+      width: 100%;
+      max-width: var(--max-w);
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* 🎨 TELA INICIAL — "Como posso ajudar você hoje?" */
+    .welcome-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 48vh;
+      padding: 30px 10px 16px;
+      text-align: center;
+      animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      width: 100%;
+    }
+
+    .welcome-header {
+      max-width: 640px;
+      margin: 0 auto 32px;
+    }
+
+    .welcome-title {
+      font-family: var(--font-heading, 'Lora', Georgia, serif);
+      font-size: 2.5rem; /* text-4xl mobile */
+      font-weight: 400;
+      line-height: 1.22;
+      letter-spacing: -0.5px;
+      margin-bottom: 28px;
+      display: inline-block;
+    }
+
+    @media (min-width: 768px) {
+      .welcome-title {
+        font-size: 3.4rem; /* text-5xl desktop */
+      }
+    }
+
+    .welcome-title-gradient {
+      background: linear-gradient(to right, #6C567B, #C06C84, #F67280);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 500;
+      display: inline-block;
+    }
+
+    .welcome-title-muted {
+      color: #9e9ea3;
+      font-weight: 400;
+      display: inline-block;
+    }
+
+    /* GRID DE 4 SUGESTÕES (2x2 Mobile, 4 Colunas Desktop) */
+    .suggestion-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      width: 100%;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: 768px) {
+      .suggestion-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+      }
+    }
+
+    .suggestion-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+      padding: 18px 16px;
+      background: #1e1f20;
+      border: 1px solid var(--border-ellas, rgba(108, 86, 123, 0.22));
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .suggestion-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(to right, #6C567B, #C06C84, #F67280);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .suggestion-card:hover {
+      background: #282a2c;
+      border-color: rgba(192, 108, 132, 0.6);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(192, 108, 132, 0.15), 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .suggestion-card:hover::before {
+      opacity: 1;
+    }
+
+    .suggestion-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(108, 86, 123, 0.22);
+      color: #F67280;
+      margin-bottom: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .suggestion-card:hover .suggestion-icon {
+      background: rgba(192, 108, 132, 0.35);
+      color: #ffffff;
+      transform: scale(1.08);
+    }
+
+    .suggestion-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 5px;
+      line-height: 1.4;
+    }
+
+    .suggestion-desc {
+      font-size: 12px;
+      font-weight: 400;
+      color: #a0a0a0;
+      line-height: 1.45;
+    }
+
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 2. Mensagens do Usuário */
+    .message-row.user {
+      align-items: flex-end;
+    }
+
+    .message-row.user .bubble {
+      background: var(--user-bubble);
+      color: var(--text-main);
+      border-radius: 24px;
+      padding: 14px 22px;
+      max-width: 75%;
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1.6;
+      letter-spacing: 0.2px;
+      word-break: break-word;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    }
+
+    /* 2 & 3. Mensagens da Lumina / Cabeçalho e Corpo */
+    .message-row.lumina {
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .message-row.lumina .ai-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-white);
+      line-height: 1.5;
+    }
+
+    .message-row.lumina .bubble {
+      width: 100%;
+      color: var(--text-main);
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1.6;
+      letter-spacing: 0.2px;
+      word-break: break-word;
+    }
+
+    .bubble p {
+      margin-bottom: 12px;
+    }
+    .bubble p:last-child {
+      margin-bottom: 0;
+    }
+
+    .bubble ul, .bubble ol {
+      margin: 10px 0;
+      padding-left: 24px;
+    }
+
+    .bubble li {
+      margin-bottom: 6px;
+      line-height: 1.6;
+    }
+
+    .bubble strong {
+      font-weight: 600;
+      color: var(--text-white);
+    }
+
+    .bubble table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #18191a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid #333538;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .bubble th {
+      background: #252629;
+      color: var(--text-white);
+      font-weight: 600;
+    }
+
+    .bubble pre {
+      background: #1e1f20;
+      border: 1px solid #333538;
+      border-radius: 12px;
+      padding: 14px;
+      overflow-x: auto;
+      margin: 14px 0;
+    }
+    .bubble code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    .message-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 10px;
+    }
+
+    .action-icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .action-icon-btn:hover {
+      background: #2b2c30;
+      color: #fff;
+    }
+
+    /* ANIMAÇÃO DE DIGITAÇÃO PULSANTE (TYPEWRITER & PENSANDO) */
+    .typing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 0;
+    }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--accent-pink);
+      border-radius: 50%;
+      animation: typingBounce 1.4s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typingBounce {
+      0%, 80%, 100% {
+        transform: scale(0.3);
+        opacity: 0.35;
+      }
+      40% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    /* --- GAVETA LATERAL DO CONTEXTO VETORIAL (INSPECTOR DESLIZANTE) --- */
+    .sources-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 440px;
+      max-width: 90vw;
+      background: #1e1f20;
+      border-left: 1px solid #333538;
+      box-shadow: -16px 0 40px rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sources-drawer.open {
+      transform: translateX(0);
+    }
+
+    /* 3. Título da Gaveta */
+    .sources-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #333538;
+    }
+    .sources-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-white);
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-drawer-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .close-drawer-btn:hover {
+      background: #2b2c30;
+      color: #fff;
+    }
+
+    .sources-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 4. Metadados e Métricas RAG */
+    .metrics-box {
+      background: #18191a;
+      border: 1px solid #333538;
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
+    .metric-item { display: flex; flex-direction: column; gap: 4px; }
+    .metric-item span:first-child { font-size: 12px; font-weight: 400; line-height: 1.4; color: var(--text-muted); }
+    .metric-value { font-size: 13.5px; font-weight: 600; line-height: 1.4; color: #00ff88; }
+    .metric-model-badge { font-size: 12px; font-weight: 600; color: var(--accent-pink); grid-column: span 2; }
+
+    /* 3 & 4. Card de Documento Vetorial */
+    .doc-card {
+      background: #18191a;
+      border: 1px solid #333538;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.15s;
+    }
+    .doc-card:hover { border-color: rgba(255, 255, 255, 0.2); }
+
+    .doc-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .doc-name { font-size: 14px; font-weight: 600; color: var(--text-white); line-height: 1.5; }
+    .doc-score {
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.4;
+      background: rgba(0, 255, 136, 0.1);
+      color: #00ff88;
+      padding: 2px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      white-space: nowrap;
+    }
+
+    .doc-meta { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11.5px; font-weight: 400; line-height: 1.4; }
+    .doc-tag { background: #2b2c30; color: var(--text-muted); padding: 2px 8px; border-radius: 4px; }
+    .doc-details { font-size: 12.5px; font-weight: 400; color: var(--text-details); line-height: 1.5; }
+
+    /* --- BARRA DE DIGITAÇÃO FIXA ESTILO GEMINI DARK MODE --- */
+    .composer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 16px 20px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, #131314 65%, transparent);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .preview-bar {
+      width: 100%;
+      max-width: var(--max-w);
+      display: none;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #1e1f20;
+      border: 1px dashed #333538;
+      border-radius: 16px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      pointer-events: auto;
+    }
+
+    .preview-item {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #333538;
+      background: #000;
+    }
+    .preview-item img, .preview-item video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .preview-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: rgba(0,0,0,0.85);
+      color: #ff4444;
+      border: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .preview-remove:hover { background: #ff4444; color: #fff; }
+
+    .chat-img-thumb {
+      max-width: 240px;
+      max-height: 180px;
+      border-radius: 10px;
+      margin-top: 8px;
+      border: 1px solid var(--border-color);
+      display: block;
+    }
+
+    .composer-inner {
+      width: 100%;
+      max-width: var(--max-w);
+      background: #1e1f20;
+      border-radius: 9999px;
+      padding: 6px 10px 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
+      pointer-events: auto;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .composer-inner:focus-within {
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+    }
+
+    .attach-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .btn-attach {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: #c4c7c5;
+      font-size: 22px;
+      font-weight: 300;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease;
+      flex-shrink: 0;
+    }
+    .btn-attach:hover {
+      background: #2b2c30;
+      color: #fff;
+    }
+    .btn-attach.active-glow {
+      color: #00ff88;
+    }
+
+    .attach-menu {
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 0;
+      background: #1e1f20;
+      border: 1px solid #333538;
+      border-radius: 16px;
+      padding: 6px;
+      width: 250px;
+      display: none;
+      flex-direction: column;
+      gap: 3px;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.65);
+      z-index: 200;
+    }
+    .attach-menu.open {
+      display: flex;
+      animation: popIn 0.15s ease-out;
+    }
+
+    .attach-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      color: var(--text-main);
+    }
+    .attach-option:hover {
+      background: #2b2c30;
+      color: #fff;
+    }
+    .attach-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .attach-info { display: flex; flex-direction: column; }
+    .attach-title { font-size: 13.5px; font-weight: 500; color: var(--text-white); line-height: 1.5; }
+    .attach-sub { font-size: 11.5px; font-weight: 400; color: var(--text-muted); line-height: 1.4; }
+
+    /* 2 & 3. Campo de Entrada de Texto */
+    .input-prompt {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1.5;
+      letter-spacing: 0.2px;
+      font-family: inherit;
+      outline: none;
+      padding: 10px 4px;
+    }
+    .input-prompt::placeholder { color: var(--text-muted); }
+
+    /* 3. Seletor de Modelo Estilo Gemini */
+    .model-picker-wrapper {
+      position: relative;
+    }
+
+    .model-picker-btn {
+      background: #2b2c30;
+      color: var(--text-white);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 9999px;
+      padding: 6px 14px;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.5;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      outline: none;
+      transition: background 0.15s ease;
+      white-space: nowrap;
+    }
+    .model-picker-btn:hover, .model-picker-btn.open {
+      background: #37393e;
+      color: #fff;
+    }
+    .model-picker-btn .chevron-icon {
+      transition: transform 0.2s ease;
+      color: var(--text-muted);
+    }
+    .model-picker-btn.open .chevron-icon {
+      transform: rotate(180deg);
+    }
+
+    .model-picker-menu {
+      position: absolute;
+      bottom: calc(100% + 12px);
+      right: 0;
+      min-width: 320px;
+      max-width: 360px;
+      max-height: calc(100vh - 160px);
+      overflow-y: auto;
+      background: #1e1f20;
+      border: 1px solid #333538;
+      border-radius: 20px;
+      padding: 8px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      z-index: 200;
+      backdrop-filter: blur(16px);
+      animation: popIn 0.15s ease-out;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(6px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .model-picker-menu.show { display: flex; }
+
+    .model-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      user-select: none;
+    }
+    .model-option:hover { background: #2b2c30; }
+
+    .model-check {
+      width: 18px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-white);
+      visibility: hidden;
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .model-option.active .model-check { visibility: visible; }
+
+    .model-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+    }
+    .model-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-white);
+      line-height: 1.5;
+      letter-spacing: 0.1px;
+    }
+    .model-desc {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .model-badge {
+      background: #333538;
+      color: #c4c7c5;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      padding: 2px 8px;
+      border-radius: 10px;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .model-divider {
+      height: 1px;
+      background: #333538;
+      margin: 4px 8px;
+    }
+
+    .btn-send {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #2b2c30;
+      color: var(--text-main);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      flex-shrink: 0;
+    }
+    .btn-send:hover:not(:disabled) { background: #37393e; color: #fff; }
+    .btn-send:disabled { opacity: 0.35; cursor: default; }
+
+    /* 4. Disclaimer Inferior */
+    .disclaimer-text {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-top: 8px;
+      text-align: center;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+  <!-- SIDEBAR LATERAL (HISTÓRICO REAL & FILTROS) -->
+  <aside id="sidebar" class="sidebar">
+    <button id="newChatBtn" class="new-chat-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>Nova conversa</span>
+    </button>
+
+    <div class="sidebar-section-title">Filtros da Base Vetorial</div>
+    <div class="sidebar-filters">
+      <div class="filter-item">
+        <label>País Alvo:</label>
+        <select id="paisFilter" class="filter-select">
+          <option value="">Todos os Países</option>
+          <option value="Brasil">Brasil</option>
+          <option value="Bolivia">Bolívia</option>
+          <option value="Peru">Peru</option>
+          <option value="Mexico">México</option>
+          <option value="Chile">Chile</option>
+          <option value="Argentina">Argentina</option>
+          <option value="Colombia">Colômbia</option>
+        </select>
+      </div>
+
+      <div class="filter-item">
+        <label>Top-K Documentos:</label>
+        <select id="topKSelect" class="filter-select">
+          <option value="3">Top 3 mais relevantes</option>
+          <option value="4" selected>Top 4 mais relevantes</option>
+          <option value="6">Top 6 mais relevantes</option>
+          <option value="8">Top 8 mais relevantes</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sidebar-section-title">Conversas Recentes</div>
+    <ul id="historyList" class="history-list"></ul>
+  </aside>
+
+  <!-- CABEÇALHO SUPERIOR COM BOTÃO NO CANTO DIREITO -->
+  <header>
+    <div class="header-left">
+      <button id="menuToggleBtn" class="menu-btn" title="Menu lateral">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+      <div class="brand">
+        <span class="sparkle-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z"/></svg>
+        </span>
+        <span>Lumina</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- CONTROLE DE VOZ (GEMINI TTS + GOOGLE / NAVEGADOR / DISPOSITIVO) -->
+      <div id="voiceControlGroup" class="voice-control-group">
+        <button id="voiceToggleBtn" class="voice-toggle-btn" title="Ativar/Desativar leitura automática por voz">
+          <span id="voiceIcon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          </span>
+          <span id="voiceLabel">Voz</span>
+        </button>
+        <select id="voiceSelect" class="voice-select" title="Selecionar voz (Gemini IA / Google / Navegador / Dispositivo)">
+          <option value="auto">Auto (Google / Dispositivo)</option>
+          <option value="gemini:pt-br-assistant-5">Gemini IA • PT-BR Clara (Fem)</option>
+        </select>
+      </div>
+
+      <!-- BOTÃO NO CANTO SUPERIOR DIREITO DE ATIVAR/DESATIVAR CONTEXTO VETORIAL -->
+      <button id="toggleSourcesBtn" class="sources-toggle-btn" title="Exibir/Ocultar Contexto Vetorial Recuperado">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Contexto Vetorial</span>
+        <span id="sourcesBadge" class="sources-count-badge">1.360</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ÁREA PRINCIPAL DO CHAT EM TELA CHEIA -->
+  <main>
+    <div class="content-scroll" id="scrollArea">
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome-screen" id="welcomeScreen">
+          <div class="welcome-header">
+            <h1 class="welcome-title">
+              <span class="welcome-title-gradient">Olá! Como posso</span><br>
+              <span class="welcome-title-muted">ajudar você hoje?</span>
+            </h1>
+          </div>
+          
+          <div class="suggestion-grid">
+            <div class="suggestion-card" onclick="selectSuggestion('Segundo os microdados do INEP, qual a porcentagem de mulheres na Engenharia Mecânica e Automação?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Censo INEP & Engenharia</h3>
+                <p class="suggestion-desc">Qual a taxa de mulheres em Mecânica e Automação?</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quais iniciativas existem no Peru e na Bolívia mapeadas pelo Projeto ELLAS?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Iniciativas Latam</h3>
+                <p class="suggestion-desc">Projetos no Peru e Bolívia mapeados pelo ELLAS</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quem foi Sonia Guimarães e quais foram suas contribuições para a física e ciência no Brasil?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Pioneiras em STEM</h3>
+                <p class="suggestion-desc">História e impacto de Sonia Guimarães</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quais são as principais políticas públicas e fatores que afetam a igualdade de gênero na ciência?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Políticas & Fatores</h3>
+                <p class="suggestion-desc">Barreiras e incentivos para mulheres em exatas</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BARRA FIXA FLUTUANTE ESTILO GEMINI DARK MODE -->
+    <div class="composer">
+      <div id="previewBar" class="preview-bar"></div>
+
+      <div class="composer-inner">
+        <!-- BOTÃO DE ANEXO MULTIMODAL (Visível com Nemotron 3 Nano Omni 30B) -->
+        <div id="attachWrapper" class="attach-wrapper" style="display: none;">
+          <button type="button" id="attachBtn" class="btn-attach" title="Anexar arquivo">+</button>
+          <div id="attachMenu" class="attach-menu">
+            <div class="attach-option" id="optUploadImage">
+              <span class="attach-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </span>
+              <div class="attach-info">
+                <span class="attach-title">Upload image</span>
+                <span class="attach-sub">Até 8 imagens (PNG, JPG, WEBP)</span>
+              </div>
+            </div>
+            <div class="attach-option" id="optUploadVideo">
+              <span class="attach-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              </span>
+              <div class="attach-info">
+                <span class="attach-title">Upload video</span>
+                <span class="attach-sub">Até 1 vídeo (MP4, MOV, WEBM)</span>
+              </div>
+            </div>
+            <div class="attach-option" id="optUploadAudio">
+              <span class="attach-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </span>
+              <div class="attach-info">
+                <span class="attach-title">Upload audio</span>
+                <span class="attach-sub">Até 1 áudio (WAV, MP3)</span>
+              </div>
+            </div>
+          </div>
+          
+          <input type="file" id="fileInputImage" accept="image/png,image/jpeg,image/jpg,image/webp" multiple style="display:none;" />
+          <input type="file" id="fileInputVideo" accept="video/mp4,video/quicktime,video/webm" style="display:none;" />
+          <input type="file" id="fileInputAudio" accept="audio/wav,audio/mpeg,audio/mp3" style="display:none;" />
+        </div>
+
+        <input id="promptInput" class="input-prompt" type="text" placeholder="Peça à Lumina" autocomplete="off"/>
+
+        <div class="model-picker-wrapper">
+          <button type="button" id="modelPickerBtn" class="model-picker-btn" title="Trocar modelo de IA">
+            <span id="modelPickerLabel">Groq</span>
+            <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <div id="modelPickerMenu" class="model-picker-menu">
+            <div class="model-option active" data-value="groq" data-label="Groq" data-name="Groq (GPT-OSS 120B)">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Groq (GPT-OSS 120B)</div>
+                <div class="model-desc">Respostas mais rápidas</div>
+              </div>
+              <div class="model-badge">Rápido</div>
+            </div>
+
+            <div class="model-option" data-value="gemini" data-label="Flash" data-name="Gemini 2.5 Flash">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Gemini 2.5 Flash</div>
+                <div class="model-desc">Ajuda para tudo</div>
+              </div>
+              <div class="model-badge">Google</div>
+            </div>
+
+            <div class="model-option" data-value="nemotron-3-nano-omni" data-label="Nano Omni" data-name="Nemotron 3 Nano Omni">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Nemotron 3 Nano Omni</div>
+                <div class="model-desc">Visão e análise de arquivos</div>
+              </div>
+              <div class="model-badge">Multimodal</div>
+            </div>
+
+            <div class="model-option" data-value="nemotron-3-super-120b" data-label="Nemotron 120B" data-name="Nemotron 3.5 Super 120B">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Nemotron 3.5 Super 120B</div>
+                <div class="model-desc">Raciocínio avançado MoE</div>
+              </div>
+              <div class="model-badge">NVIDIA</div>
+            </div>
+
+            <div class="model-option" data-value="mistral-large" data-label="Mistral 4" data-name="Mistral Large 4 (1T MoE)">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Mistral Large 4</div>
+                <div class="model-desc">1T MoE Multimodal e Raciocínio</div>
+              </div>
+              <div class="model-badge">Multimodal</div>
+            </div>
+
+            <div class="model-option" data-value="gpt-oss-120b" data-label="GPT-OSS 120B" data-name="GPT-OSS 120B">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">GPT-OSS 120B</div>
+                <div class="model-desc">Raciocínio complexo open-source</div>
+              </div>
+              <div class="model-badge">NVIDIA</div>
+            </div>
+
+            <div class="model-option" data-value="kimi-3" data-label="Kimi-3" data-name="Kimi-3">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Kimi-3</div>
+                <div class="model-desc">Contexto longo e raciocínio</div>
+              </div>
+              <div class="model-badge">NVIDIA</div>
+            </div>
+
+            <div class="model-option" data-value="gpt-oss-20b" data-label="GPT-OSS 20B" data-name="GPT-OSS 20B">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">GPT-OSS 20B</div>
+                <div class="model-desc">Raciocínio open-source leve</div>
+              </div>
+              <div class="model-badge">NVIDIA</div>
+            </div>
+
+            <div class="model-divider"></div>
+
+            <div class="model-option" data-value="phi-3-mini" data-label="Phi-3" data-name="Phi-3 Mini">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Phi-3 Mini</div>
+                <div class="model-desc">Processamento local eficiente</div>
+              </div>
+              <div class="model-badge">Local</div>
+            </div>
+
+            <div class="model-option" data-value="gemma-2-2b" data-label="Gemma 2" data-name="Gemma 2 2B">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Gemma 2 2B</div>
+                <div class="model-desc">Execução local ultraleve</div>
+              </div>
+              <div class="model-badge">Local</div>
+            </div>
+
+            <div class="model-option" data-value="qwen" data-label="Qwen 2.5" data-name="Qwen 2.5 1.5B">
+              <div class="model-check">✓</div>
+              <div class="model-info">
+                <div class="model-name">Qwen 2.5 1.5B</div>
+                <div class="model-desc">SLM local / remoto via Ollama</div>
+              </div>
+              <div class="model-badge">SLM</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Indicador Circular de Contexto (Estilo foto) -->
+        <div id="composerContextPill" class="context-pill-btn" title="Uso de Contexto: 0 / 4.096 tokens (0%)" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #2b2c30; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 9999px; cursor: pointer; user-select: none; transition: background 0.15s ease;">
+          <span class="label-contexto-pct" style="font-size: 12px; font-weight: 600; color: #10b981;">0%</span>
+          <svg class="progress-ring" width="16" height="16" viewBox="0 0 24 24">
+            <circle class="progress-ring-bg" cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.18)" stroke-width="2.8" fill="none" />
+            <circle class="progress-ring-circle" cx="12" cy="12" r="9" stroke="#10b981" stroke-width="2.8" fill="none"
+              stroke-dasharray="56.548" stroke-dashoffset="56.548" stroke-linecap="round"
+              transform="rotate(-90 12 12)" style="transition: stroke-dashoffset 0.4s ease, stroke 0.4s ease;" />
+          </svg>
+        </div>
+
+        <button id="sendBtn" class="btn-send" title="Enviar mensagem">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <div class="disclaimer-text">A Lumina pode cometer erros. Considere verificar informações importantes.</div>
+    </div>
+  </main>
+
+  <!-- GAVETA LATERAL DO CONTEXTO VETORIAL (DESLIZANTE COM BOTÃO NO TOPO DIREITO) -->
+  <aside id="sourcesDrawer" class="sources-drawer">
+    <div class="sources-header">
+      <div class="sources-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Contexto Vetorial Recuperado</span>
+      </div>
+      <button id="closeSourcesDrawerBtn" class="close-drawer-btn" title="Fechar">✕</button>
+    </div>
+
+    <div class="sources-content">
+      <div class="metrics-box" id="metricsBox">
+        <div class="metric-item metric-model-badge">
+          <span>Modelo em Execução:</span>
+          <span class="metric-value" id="modeloAtivo" style="color: var(--accent-pink);">Groq (openai/gpt-oss-120b)</span>
+        </div>
+        <div class="metric-item">
+          <span>Tempo Busca Vetorial:</span>
+          <span class="metric-value" id="tempoBusca">-</span>
+        </div>
+        <div class="metric-item">
+          <span>Tempo Inferência IA:</span>
+          <span class="metric-value" id="tempoLLM">-</span>
+        </div>
+        <div class="metric-item">
+          <span>Documentos Utilizados:</span>
+          <span class="metric-value" id="docsUtilizados">-</span>
+        </div>
+        <div class="metric-item">
+          <span>Filtro de País:</span>
+          <span class="metric-value" id="paisFiltroInfo" style="color: #9d00ff;">Todos</span>
+        </div>
+        <div class="metric-item" style="grid-column: span 2;">
+          <span>Total de Documentos no Banco:</span>
+          <span class="metric-value" id="totalDocsBanco" style="color: #00ff88;">1.360</span>
+        </div>
+        <!-- Indicador Circular de Contexto (Estilo foto) -->
+        <div class="metric-item context-usage-row" style="grid-column: span 2; display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: rgba(0, 0, 0, 0.25); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500; color: var(--text-white);">Uso de Contexto</span>
+            <span id="sublabel-contexto" style="font-size: 11.5px; color: var(--text-muted);">0 / 4.096 tokens</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="label-contexto" class="label-contexto-texto" style="font-size: 13px; font-weight: 600; color: #10b981;">0% usado</span>
+            <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;">
+              <svg class="progress-ring" width="22" height="22" viewBox="0 0 24 24">
+                <circle class="progress-ring-bg" cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.18)" stroke-width="2.8" fill="none" />
+                <circle class="progress-ring-circle" cx="12" cy="12" r="9" stroke="#10b981" stroke-width="2.8" fill="none"
+                  stroke-dasharray="56.548" stroke-dashoffset="56.548" stroke-linecap="round"
+                  transform="rotate(-90 12 12)" style="transition: stroke-dashoffset 0.4s ease, stroke 0.4s ease;" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="sourcesList" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px;">
+          Nenhuma busca realizada ainda. Faça uma pergunta para inspecionar os vetores recuperados!
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    const API_BASE = "http://localhost:3001";
+    const chatContainer = document.getElementById('chatContainer');
+    const scrollArea = document.getElementById('scrollArea');
+    const promptInput = document.getElementById('promptInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const paisFilter = document.getElementById('paisFilter');
+    const topKSelect = document.getElementById('topKSelect');
+    const sourcesList = document.getElementById('sourcesList');
+
+    // Elementos de controle do Drawer e Sidebar
+    const menuToggleBtn = document.getElementById('menuToggleBtn');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    const toggleSourcesBtn = document.getElementById('toggleSourcesBtn');
+    const sourcesDrawer = document.getElementById('sourcesDrawer');
+    const closeSourcesDrawerBtn = document.getElementById('closeSourcesDrawerBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const historyListEl = document.getElementById('historyList');
+
+    // --- SISTEMA DE HISTÓRICO REAL (LOCALSTORAGE) ---
+    const STORAGE_KEY = 'lumina_chat_history_v3';
+    let currentConversationId = null;
+    let contextoAtual = { usados: 0, maximo: 4096 }; // Contexto acumulado da conversa (só cresce)
+    let conversationHistory = []; // Para enviar ao backend: [{role, content}]
+
+    function getStoredConversations() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveStoredConversations(convs) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(convs));
+      } catch (e) {
+        console.error('Erro ao salvar histórico no localStorage:', e);
+      }
+    }
+
+    function renderHistorySidebar() {
+      const convs = getStoredConversations();
+      historyListEl.innerHTML = '';
+
+      if (!convs || convs.length === 0) {
+        historyListEl.innerHTML = '<div class="history-empty">Nenhum chat anterior.<br>Inicie uma nova conversa!</div>';
+        return;
+      }
+
+      convs.forEach(c => {
+        const li = document.createElement('li');
+        li.className = `history-item ${c.id === currentConversationId ? 'active' : ''}`;
+        li.innerHTML = `
+          <span class="history-item-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span class="history-item-title" title="${c.title || 'Conversa'}">${c.title || 'Conversa sem título'}</span>
+          <button class="history-delete-btn" title="Excluir conversa">✕</button>
+        `;
+
+        li.onclick = () => {
+          loadConversation(c.id);
+          sidebar.classList.remove('open');
+          sidebarOverlay.classList.remove('show');
+        };
+
+        li.querySelector('.history-delete-btn').onclick = (e) => {
+          e.stopPropagation();
+          deleteConversation(c.id);
+        };
+
+        historyListEl.appendChild(li);
+      });
+    }
+
+    function loadConversation(id) {
+      const convs = getStoredConversations();
+      const conv = convs.find(c => c.id === id);
+      if (!conv) return;
+
+      currentConversationId = id;
+      chatContainer.innerHTML = '';
+      conversationHistory = [];
+
+      // Seleciona o modelo salvo no histórico, se existente
+      if (conv.model) {
+        const opt = document.querySelector(`.model-option[data-value="${conv.model}"]`);
+        if (opt) {
+          selectedModel = conv.model;
+          selectedModelName = opt.getAttribute('data-name') || opt.getAttribute('data-label');
+          modelPickerLabel.textContent = opt.getAttribute('data-label');
+          modelOptions.forEach(o => o.classList.remove('active'));
+          opt.classList.add('active');
+          syncMultimodalVisibility();
+        }
+      }
+
+      let lastDocs = null;
+      let lastMetricas = null;
+      let lastModelo = null;
+
+      (conv.messages || []).forEach(m => {
+        if (m.role === 'user') {
+          let userHtml = m.text ? `<div>${m.text}</div>` : '';
+          if (m.media && m.media.length > 0) {
+            userHtml += '<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">';
+            m.media.forEach(f => {
+              if (typeof f === 'string' && f.startsWith('data:image')) {
+                userHtml += `<img src="${f}" class="chat-img-thumb" alt="Imagem" />`;
+              } else if (typeof f === 'string' && f.startsWith('data:video')) {
+                userHtml += `<video src="${f}" controls class="chat-img-thumb"></video>`;
+              } else if (typeof f === 'string' && f.startsWith('data:audio')) {
+                userHtml += `<audio src="${f}" controls style="margin-top:6px;max-width:240px;"></audio>`;
+              }
+            });
+            userHtml += '</div>';
+          }
+          appendMessage('user', userHtml);
+          conversationHistory.push({ role: 'user', content: m.text || "Mídia anexada" });
+        } else if (m.role === 'lumina') {
+          const luminaMsg = appendMessage('lumina', m.html || marked.parse(m.rawText || ''), m.modelName || selectedModelName);
+          if (luminaMsg) luminaMsg.dataset.rawText = m.rawText || '';
+          conversationHistory.push({ role: 'assistant', content: m.rawText || m.html });
+          if (m.docs && m.docs.length > 0) {
+            lastDocs = m.docs;
+            lastMetricas = m.metricas;
+            lastModelo = m.modeloUtilizado;
+          }
+        }
+      });
+
+      atualizarBarraContexto({ usados: 0, maximo: contextoAtual.maximo, reset: true });
+      if (lastDocs) {
+        renderSources(lastDocs, lastMetricas, lastModelo);
+      }
+
+      renderHistorySidebar();
+    }
+
+    function deleteConversation(id) {
+      let convs = getStoredConversations();
+      convs = convs.filter(c => c.id !== id);
+      saveStoredConversations(convs);
+
+      if (currentConversationId === id) {
+        startNewConversation();
+      } else {
+        renderHistorySidebar();
+      }
+    }
+
+    function getWelcomeScreenHtml() {
+      return `
+        <div class="welcome-screen" id="welcomeScreen">
+          <div class="welcome-header">
+            <h1 class="welcome-title">
+              <span class="welcome-title-gradient">Olá! Como posso</span><br>
+              <span class="welcome-title-muted">ajudar você hoje?</span>
+            </h1>
+          </div>
+          
+          <div class="suggestion-grid">
+            <div class="suggestion-card" onclick="selectSuggestion('Segundo os microdados do INEP, qual a porcentagem de mulheres na Engenharia Mecânica e Automação?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Censo INEP & Engenharia</h3>
+                <p class="suggestion-desc">Qual a taxa de mulheres em Mecânica e Automação?</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quais iniciativas existem no Peru e na Bolívia mapeadas pelo Projeto ELLAS?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Iniciativas Latam</h3>
+                <p class="suggestion-desc">Projetos no Peru e Bolívia mapeados pelo ELLAS</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quem foi Sonia Guimarães e quais foram suas contribuições para a física e ciência no Brasil?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Pioneiras em STEM</h3>
+                <p class="suggestion-desc">História e impacto de Sonia Guimarães</p>
+              </div>
+            </div>
+
+            <div class="suggestion-card" onclick="selectSuggestion('Quais são as principais políticas públicas e fatores que afetam a igualdade de gênero na ciência?')">
+              <div class="suggestion-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
+              </div>
+              <div class="suggestion-content">
+                <h3 class="suggestion-title">Políticas & Fatores</h3>
+                <p class="suggestion-desc">Barreiras e incentivos para mulheres em exatas</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function startNewConversation() {
+      currentConversationId = null;
+      conversationHistory = [];
+      chatContainer.innerHTML = getWelcomeScreenHtml();
+      sidebar.classList.remove('open');
+      sidebarOverlay.classList.remove('show');
+      renderHistorySidebar();
+      atualizarBarraContexto({ usados: 0, maximo: contextoAtual.maximo, reset: true });
+      promptInput.focus();
+    }
+
+    window.selectSuggestion = function(text) {
+      promptInput.value = text;
+      promptInput.style.height = 'auto';
+      promptInput.style.height = (promptInput.scrollHeight) + 'px';
+      sendBtn.disabled = false;
+      sendBtn.click();
+    };
+
+    // Sidebar Toggle
+    menuToggleBtn.onclick = () => {
+      sidebar.classList.toggle('open');
+      sidebarOverlay.classList.toggle('show');
+    };
+    sidebarOverlay.onclick = () => {
+      sidebar.classList.remove('open');
+      sidebarOverlay.classList.remove('show');
+    };
+
+    // Sources Drawer Toggle (Canto superior direito)
+    toggleSourcesBtn.onclick = () => {
+      const isOpen = sourcesDrawer.classList.toggle('open');
+      toggleSourcesBtn.classList.toggle('active', isOpen);
+    };
+    closeSourcesDrawerBtn.onclick = () => {
+      sourcesDrawer.classList.remove('open');
+      toggleSourcesBtn.classList.remove('active');
+    };
+
+    // Abre a gaveta de contexto ao clicar no indicador de anel do composer
+    const composerContextPill = document.getElementById('composerContextPill');
+    if (composerContextPill) {
+      composerContextPill.onclick = () => {
+        sourcesDrawer.classList.add('open');
+        if (toggleSourcesBtn) toggleSourcesBtn.classList.add('active');
+      };
+    }
+
+    // New Chat
+    newChatBtn.onclick = startNewConversation;
+
+    // Checa status do servidor e atualiza contadores
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/stats`);
+        const data = await res.json();
+        const totalDocsBanco = document.getElementById('totalDocsBanco');
+        if (totalDocsBanco) totalDocsBanco.innerText = data.totalDocumentos;
+        const sourcesBadge = document.getElementById('sourcesBadge');
+        if (sourcesBadge) sourcesBadge.innerText = data.totalDocumentos;
+      } catch (e) {
+        console.warn("Servidor vetorial offline ou carregando...");
+      }
+    }
+    checkHealth();
+
+    function appendMessage(role, html, modelTag = null, showActions = true) {
+      const welcomeScreen = document.getElementById('welcomeScreen');
+      if (welcomeScreen && role === 'user') {
+        welcomeScreen.remove();
+      }
+
+      const row = document.createElement('div');
+      row.className = `message-row ${role}`;
+      
+      if (role === 'lumina') {
+        const displayModel = modelTag || selectedModelName;
+        row.innerHTML = `
+          <div class="ai-header">
+            <span class="sparkle-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent-pink)"><path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z"/></svg></span>
+            <span>Lumina • ${displayModel}</span>
+          </div>
+          <div class="bubble">${html}</div>
+          <div class="message-actions" style="display: ${showActions ? 'flex' : 'none'};">
+            <button class="action-icon-btn btn-play-audio" title="Ouvir resposta (Voz do Google / navegador / dispositivo)" onclick="playAudioFromMessage(this)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+            </button>
+            <button class="action-icon-btn" title="Copiar resposta" onclick="copyMessage(this)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <button class="action-icon-btn" title="Bom resultado">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+            </button>
+            <button class="action-icon-btn" title="Ruim">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>
+            </button>
+          </div>
+        `;
+      } else {
+        row.innerHTML = `<div class="bubble">${html}</div>`;
+      }
+
+      chatContainer.appendChild(row);
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+      return row.querySelector('.bubble');
+    }
+
+    // --- CONTROLE DE VOZ UNIFICADO (GEMINI TTS + GOOGLE / NAVEGADOR / DISPOSITIVO) ---
+    const GEMINI_TTS_VOICES = [
+      { id: 'pt-br-assistant-5', label: 'Gemini IA • PT-BR Clara (Fem)' },
+      { id: 'pt-br-assistant-6', label: 'Gemini IA • PT-BR Calorosa (Fem)' },
+      { id: 'pt-br-concierge-4', label: 'Gemini IA • PT-BR Jovem (Fem)' },
+      { id: 'pt-br-assistant-11', label: 'Gemini IA • PT-BR Grave (Masc)' },
+      { id: 'Kore', label: 'Gemini IA • Studio Kore (Fem)' },
+      { id: 'Aoede', label: 'Gemini IA • Studio Aoede (Leve)' },
+      { id: 'Puck', label: 'Gemini IA • Studio Puck (Masc)' }
+    ];
+
+    let voiceEnabled = localStorage.getItem('lumina_voice_enabled') === 'true';
+    let selectedVoicePref = localStorage.getItem('lumina_voice_name') || 'auto';
+    let currentSpeechSessionId = 0;
+    let activeUtteranceRef = null;
+    let availableVoices = [];
+    let ttsAbortController = null;
+    const globalAudioPlayer = new Audio();
+
+    function classificarPrioridadeVoz(v) {
+      const lang = (v.lang || '').replace('_', '-').toLowerCase();
+      const name = (v.name || '').toLowerCase();
+      if (!lang.startsWith('pt')) return -1;
+      let score = 0;
+      if (lang === 'pt-br') score += 50;
+      if (name.includes('google')) score += 100;
+      if (name.includes('natural') || name.includes('neural') || name.includes('online')) score += 40;
+      if (name.includes('luciana') || name.includes('felipe') || name.includes('francisca') || name.includes('antonio') || name.includes('maria')) score += 20;
+      if (!v.localService) score += 10;
+      return score;
+    }
+
+    function obterMelhorVozAuto(voicesList) {
+      const ptVoices = (voicesList || []).filter(v => classificarPrioridadeVoz(v) >= 0);
+      if (ptVoices.length === 0) return (voicesList || [])[0] || null;
+      ptVoices.sort((a, b) => classificarPrioridadeVoz(b) - classificarPrioridadeVoz(a));
+      return ptVoices[0];
+    }
+
+    function obterVozNativaSelecionada() {
+      if (!('speechSynthesis' in window)) return null;
+      const voices = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
+      if (selectedVoicePref && selectedVoicePref !== 'auto' && !selectedVoicePref.startsWith('gemini:')) {
+        const encontrada = voices.find(v => v.name === selectedVoicePref);
+        if (encontrada) return encontrada;
+      }
+      return obterMelhorVozAuto(voices);
+    }
+
+    function popularSeletorVozes() {
+      const voiceSelect = document.getElementById('voiceSelect');
+      if (!voiceSelect) return;
+
+      const voices = ('speechSynthesis' in window) ? window.speechSynthesis.getVoices() : [];
+      if (voices.length > 0) availableVoices = voices;
+
+      voiceSelect.innerHTML = '';
+
+      // Grupo 1: Vozes de IA do Google Gemini 3.8 TTS (via /tts)
+      const grpGemini = document.createElement('optgroup');
+      grpGemini.label = 'Gemini 3.8 TTS (IA do Google)';
+      GEMINI_TTS_VOICES.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = `gemini:${g.id}`;
+        opt.textContent = g.label;
+        grpGemini.appendChild(opt);
+      });
+      voiceSelect.appendChild(grpGemini);
+
+      // Grupo 2: Vozes locais do Navegador / Google Chrome / Dispositivo
+      const grpLocal = document.createElement('optgroup');
+      grpLocal.label = 'Navegador / Dispositivo';
+
+      const autoBest = obterMelhorVozAuto(voices);
+      const autoLabel = autoBest ? `Auto (${autoBest.name.replace('Microsoft ', '').replace(' Online (Natural)', '')})` : 'Auto (Google / Dispositivo)';
+      const optAuto = document.createElement('option');
+      optAuto.value = 'auto';
+      optAuto.textContent = autoLabel;
+      grpLocal.appendChild(optAuto);
+
+      const ptVoices = voices
+        .filter(v => classificarPrioridadeVoz(v) >= 0)
+        .sort((a, b) => classificarPrioridadeVoz(b) - classificarPrioridadeVoz(a));
+      const listToShow = ptVoices.length > 0 ? ptVoices : voices;
+
+      listToShow.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        const origem = v.name.toLowerCase().includes('google') ? 'Google' : (v.localService ? 'Dispositivo' : 'Navegador');
+        opt.textContent = `${v.name} (${origem})`;
+        grpLocal.appendChild(opt);
+      });
+      voiceSelect.appendChild(grpLocal);
+
+      const hasPref = Array.from(voiceSelect.options).some(o => o.value === selectedVoicePref);
+      voiceSelect.value = hasPref ? selectedVoicePref : 'auto';
+      updateVoiceToggleUI();
+    }
+
+    popularSeletorVozes();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = popularSeletorVozes;
+    }
+
+    function unlockDeviceAudio() {
+      if ('speechSynthesis' in window && availableVoices.length === 0) {
+        popularSeletorVozes();
+      }
+    }
+
+    function obterDescricaoVozAtiva() {
+      if (selectedVoicePref && selectedVoicePref.startsWith('gemini:')) {
+        const id = selectedVoicePref.slice(7);
+        const found = GEMINI_TTS_VOICES.find(v => v.id === id);
+        return found ? found.label : `Gemini IA (${id})`;
+      }
+      const activeVoice = obterVozNativaSelecionada();
+      return activeVoice ? activeVoice.name : 'Voz do dispositivo';
+    }
+
+    function updateVoiceToggleUI() {
+      const group = document.getElementById('voiceControlGroup');
+      const btn = document.getElementById('voiceToggleBtn');
+      const icon = document.getElementById('voiceIcon');
+      const label = document.getElementById('voiceLabel');
+      if (!btn) return;
+
+      const voiceNameDesc = obterDescricaoVozAtiva();
+
+      if (voiceEnabled) {
+        btn.classList.add('active');
+        if (group) group.classList.add('active');
+        if (icon) {
+          icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+        }
+        if (label) label.textContent = "Voz: On";
+        btn.title = `Voz ativa (${voiceNameDesc}) - Clique para desativar`;
+      } else {
+        btn.classList.remove('active');
+        if (group) group.classList.remove('active', 'speaking');
+        if (icon) {
+          icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+        }
+        if (label) label.textContent = "Voz";
+        btn.title = `Voz desativada (${voiceNameDesc}) - Clique para ativar`;
+      }
+    }
+
+    const voiceSelectEl = document.getElementById('voiceSelect');
+    if (voiceSelectEl) {
+      voiceSelectEl.onchange = () => {
+        selectedVoicePref = voiceSelectEl.value || 'auto';
+        localStorage.setItem('lumina_voice_name', selectedVoicePref);
+        updateVoiceToggleUI();
+      };
+    }
+
+    const voiceToggleBtn = document.getElementById('voiceToggleBtn');
+    if (voiceToggleBtn) {
+      voiceToggleBtn.onclick = () => {
+        unlockDeviceAudio();
+        voiceEnabled = !voiceEnabled;
+        localStorage.setItem('lumina_voice_enabled', voiceEnabled);
+        updateVoiceToggleUI();
+
+        if (!voiceEnabled) {
+          stopCurrentAudio();
+        }
+      };
+    }
+    updateVoiceToggleUI();
+
+    const AUDIO_ICONS = {
+      idle: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`,
+      playing: `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>`,
+      loading: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin-icon"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>`
+    };
+
+    function stopCurrentAudio() {
+      currentSpeechSessionId++;
+      activeUtteranceRef = null;
+      if (ttsAbortController) {
+        ttsAbortController.abort();
+        ttsAbortController = null;
+      }
+      try {
+        globalAudioPlayer.pause();
+        globalAudioPlayer.removeAttribute('src');
+        globalAudioPlayer.load();
+      } catch (e) {}
+      if ('speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+      }
+
+      document.querySelectorAll('.btn-play-audio').forEach(b => {
+        b.classList.remove('playing', 'loading');
+        b.innerHTML = AUDIO_ICONS.idle;
+        b.title = "Ouvir resposta";
+      });
+      const group = document.getElementById('voiceControlGroup');
+      if (group) group.classList.remove('speaking');
+    }
+
+    function limparTextoParaFala(texto) {
+      return String(texto || '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/[*#_`~>]/g, '')
+        .replace(/([0-9]+)\s*%/g, '$1 por cento')
+        .replace(/\n{2,}/g, '. ')
+        .replace(/\n/g, '. ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    // Divide textos longos em blocos de até 200 caracteres (evita corte automático de voz Google no Chrome)
+    function fatiarTextoParaFala(texto, maxLen = 200) {
+      const sentencas = texto.match(/[^.!?;\n]+[.!?;]?/g) || [texto];
+      const chunks = [];
+      let atual = '';
+      for (const s of sentencas) {
+        const trecho = s.trim();
+        if (!trecho) continue;
+        if ((atual + ' ' + trecho).trim().length <= maxLen) {
+          atual = (atual + ' ' + trecho).trim();
+        } else {
+          if (atual) chunks.push(atual);
+          if (trecho.length <= maxLen) {
+            atual = trecho;
+          } else {
+            const palavras = trecho.split(/\s+/);
+            atual = '';
+            for (const p of palavras) {
+              if ((atual + ' ' + p).trim().length <= maxLen) {
+                atual = (atual + ' ' + p).trim();
+              } else {
+                if (atual) chunks.push(atual);
+                atual = p;
+              }
+            }
+          }
+        }
+      }
+      if (atual) chunks.push(atual);
+      return chunks;
+    }
+
+    function speakTextNative(texto, triggerBtn = null) {
+      if (!texto || !('speechSynthesis' in window)) return;
+      stopCurrentAudio();
+
+      const limpo = limparTextoParaFala(texto);
+      if (!limpo) return;
+
+      const sessionId = ++currentSpeechSessionId;
+      const chunks = fatiarTextoParaFala(limpo, 200);
+      if (chunks.length === 0) return;
+
+      const group = document.getElementById('voiceControlGroup');
+      if (voiceEnabled && !triggerBtn && group) {
+        group.classList.add('speaking');
+      }
+      if (triggerBtn) {
+        triggerBtn.classList.add('playing');
+        triggerBtn.innerHTML = AUDIO_ICONS.playing;
+        triggerBtn.title = "Parar leitura";
+      }
+
+      const chosenVoice = obterVozNativaSelecionada();
+      let idx = 0;
+
+      function falarProximo() {
+        if (sessionId !== currentSpeechSessionId) return;
+        if (idx >= chunks.length) {
+          stopCurrentAudio();
+          return;
+        }
+
+        const utt = new SpeechSynthesisUtterance(chunks[idx]);
+        activeUtteranceRef = utt;
+        if (chosenVoice) {
+          utt.voice = chosenVoice;
+          utt.lang = chosenVoice.lang;
+        } else {
+          utt.lang = 'pt-BR';
+        }
+        utt.rate = 1.05;
+        utt.pitch = 1.0;
+
+        utt.onend = () => {
+          if (sessionId !== currentSpeechSessionId) return;
+          idx++;
+          falarProximo();
+        };
+
+        utt.onerror = () => {
+          if (sessionId === currentSpeechSessionId) {
+            stopCurrentAudio();
+          }
+        };
+
+        window.speechSynthesis.speak(utt);
+      }
+
+      falarProximo();
+    }
+
+    async function speakTextGemini(texto, voiceId, triggerBtn = null) {
+      if (!texto) return;
+      stopCurrentAudio();
+
+      const sessionId = ++currentSpeechSessionId;
+      ttsAbortController = new AbortController();
+
+      const group = document.getElementById('voiceControlGroup');
+      if (voiceEnabled && !triggerBtn && group) {
+        group.classList.add('speaking');
+      }
+      if (triggerBtn) {
+        triggerBtn.classList.add('loading');
+        triggerBtn.innerHTML = AUDIO_ICONS.loading;
+        triggerBtn.title = "Gerando voz Gemini...";
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto, voz: voiceId }),
+          signal: ttsAbortController.signal
+        });
+
+        if (sessionId !== currentSpeechSessionId) return;
+
+        if (!res.ok) {
+          console.warn("Gemini TTS falhou, usando voz do dispositivo como fallback:", res.statusText);
+          speakTextNative(texto, triggerBtn);
+          return;
+        }
+
+        const audioBlob = await res.blob();
+        if (sessionId !== currentSpeechSessionId) return;
+
+        const audioUrl = URL.createObjectURL(audioBlob);
+        globalAudioPlayer.src = audioUrl;
+
+        if (triggerBtn) {
+          triggerBtn.classList.remove('loading');
+          triggerBtn.classList.add('playing');
+          triggerBtn.innerHTML = AUDIO_ICONS.playing;
+          triggerBtn.title = "Parar leitura";
+        }
+
+        globalAudioPlayer.onended = () => {
+          if (sessionId === currentSpeechSessionId) {
+            stopCurrentAudio();
+            URL.revokeObjectURL(audioUrl);
+          }
+        };
+
+        globalAudioPlayer.onerror = () => {
+          if (sessionId === currentSpeechSessionId) {
+            stopCurrentAudio();
+          }
+        };
+
+        await globalAudioPlayer.play();
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.warn("Falha no Gemini TTS, alternando para voz local:", err);
+        if (sessionId === currentSpeechSessionId) {
+          speakTextNative(texto, triggerBtn);
+        }
+      }
+    }
+
+    function speakText(texto, triggerBtn = null) {
+      if (selectedVoicePref && selectedVoicePref.startsWith('gemini:')) {
+        const voiceId = selectedVoicePref.slice(7) || 'pt-br-assistant-5';
+        speakTextGemini(texto, voiceId, triggerBtn);
+      } else {
+        speakTextNative(texto, triggerBtn);
+      }
+    }
+
+    function extractSpokenText(bubble) {
+      if (bubble.dataset && bubble.dataset.rawText) {
+        return bubble.dataset.rawText;
+      }
+      const clone = bubble.cloneNode(true);
+      clone.querySelectorAll('table').forEach(tbl => {
+        const placeholder = document.createElement('p');
+        placeholder.innerText = '\nOs dados detalhados estão organizados na tabela na tela.\n';
+        tbl.parentNode.replaceChild(placeholder, tbl);
+      });
+      return clone.innerText;
+    }
+
+    window.playAudioFromMessage = function(btn) {
+      const bubble = btn.closest('.message-row').querySelector('.bubble');
+      if (!bubble) return;
+
+      if (btn.classList.contains('playing') || btn.classList.contains('loading')) {
+        stopCurrentAudio();
+      } else {
+        const textToSpeak = extractSpokenText(bubble);
+        speakText(textToSpeak, btn);
+      }
+    };
+
+    document.addEventListener('click', () => unlockDeviceAudio(), { once: true });
+    document.addEventListener('touchstart', () => unlockDeviceAudio(), { once: true });
+
+    function typeWriter(html, el, onComplete) {
+      let i = 0;
+      // Passo dinâmico: velocidade confortável e rápida
+      const step = Math.max(3, Math.floor(html.length / 150));
+      const interval = setInterval(() => {
+        i += step;
+        if (i >= html.length) {
+          el.innerHTML = html;
+          clearInterval(interval);
+          if (onComplete) onComplete();
+        } else {
+          el.innerHTML = html.substring(0, i);
+        }
+      }, 12);
+    }
+
+    window.copyMessage = function(btn) {
+      const bubble = btn.closest('.message-row').querySelector('.bubble');
+      if (bubble) {
+        navigator.clipboard.writeText(bubble.innerText);
+        btn.innerHTML = '✓';
+        setTimeout(() => {
+          btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        }, 1500);
+      }
+    };
+
+
+    function atualizarBarraContexto(dadosContexto) {
+      if (!dadosContexto) return;
+      let { usados = 0, maximo = 4096 } = dadosContexto;
+      usados = Number(usados) || 0;
+
+      if (dadosContexto.reset) {
+        contextoAtual = { usados: 0, maximo };
+      } else if (maximo === contextoAtual.maximo) {
+        // Mesmo modelo/janela: o contexto da conversa nunca diminui
+        usados = Math.max(usados, contextoAtual.usados);
+      }
+      contextoAtual = { usados, maximo };
+
+      const pctReal = Number(((usados / maximo) * 100).toFixed(1)); // pode passar de 100% (estouro)
+      const pct = Math.min(100, pctReal);
+      const excedido = usados > maximo;
+      const status = pct > 80 ? 'critico' : (pct > 60 ? 'alerta' : 'seguro');
+
+      let color = '#22c55e'; // Verde (seguro)
+      if (status === 'critico') color = '#ef4444'; // Vermelho
+      else if (status === 'alerta') color = '#f59e0b'; // Amarelo
+
+      // Circunferência do círculo com r=9 (viewBox 0 0 24 24): 2 * PI * 9 ≈ 56.5487
+      const circumference = 56.5487;
+      const offset = circumference - (pct / 100) * circumference;
+
+      // Atualiza anéis circulares (SVG)
+      const circles = document.querySelectorAll('.progress-ring-circle');
+      circles.forEach(c => {
+        c.style.strokeDasharray = `${circumference}`;
+        c.style.strokeDashoffset = `${offset}`;
+        c.style.stroke = color;
+      });
+
+      // Atualiza percentuais no pill e drawer (permite passar de 100% livremente)
+      const labelsPct = document.querySelectorAll('.label-contexto-pct');
+      labelsPct.forEach(l => {
+        l.innerText = `${pctReal}%`;
+        l.style.color = color;
+      });
+
+      const labelsTexto = document.querySelectorAll('.label-contexto-texto');
+      labelsTexto.forEach(l => {
+        l.innerText = `${pctReal}% usado`;
+        l.style.color = color;
+      });
+
+      const sublabels = document.querySelectorAll('#sublabel-contexto');
+      sublabels.forEach(s => {
+        s.innerText = `${usados.toLocaleString()} / ${maximo.toLocaleString()} tokens` + (excedido ? ' (janela excedida)' : '');
+      });
+
+      // Atualiza título / tooltip do botão no composer
+      const pill = document.getElementById('composerContextPill');
+      if (pill) {
+        pill.title = `Uso de Contexto: ${usados.toLocaleString()} / ${maximo.toLocaleString()} tokens (${pctReal}%)` + (excedido ? ' — janela excedida, inicie uma nova conversa' : '');
+        if (usados > 0) {
+          pill.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+        }
+      }
+    }
+
+    function renderSources(docs, metricas, modeloUtilizado) {
+      if (metricas) {
+        document.getElementById('tempoBusca').innerText = `${metricas.tempoBuscaVetorialMs} ms`;
+        document.getElementById('tempoLLM').innerText = `${metricas.tempoLLMMs} ms`;
+        const topKSol = metricas.topKSolicitado || (docs ? docs.length : '-');
+        document.getElementById('docsUtilizados').innerText = `${metricas.documentosUtilizados} (Top-K: ${topKSol})`;
+        document.getElementById('paisFiltroInfo').innerText = metricas.filtroPais || 'Todos';
+        if (metricas.contexto) {
+          atualizarBarraContexto(metricas.contexto);
+        }
+      }
+      if (modeloUtilizado) {
+        document.getElementById('modeloAtivo').innerText = modeloUtilizado;
+      }
+
+      sourcesList.innerHTML = '';
+      if (!docs || docs.length === 0) {
+        sourcesList.innerHTML = '<div style="color: #ffaa00; font-size: 13px; text-align: center; padding: 20px;">Nenhum documento relevante recuperado para esta consulta com os filtros atuais.</div>';
+        return;
+      }
+
+      docs.forEach((doc, idx) => {
+        const card = document.createElement('div');
+        card.className = 'doc-card';
+        card.innerHTML = `
+          <div class="doc-card-header">
+            <span class="doc-name">[#${idx + 1}] ${doc.nome}</span>
+            <span class="doc-score">${(doc.score * 100).toFixed(1)}% match</span>
+          </div>
+          <div class="doc-meta">
+            <span class="doc-tag">📍 ${doc.pais}</span>
+            <span class="doc-tag">🏷️ ${doc.categoria}</span>
+          </div>
+          <div class="doc-details">${doc.detalhes}</div>
+        `;
+        sourcesList.appendChild(card);
+      });
+    }
+
+    let attachedFiles = [];
+
+    const attachBtn = document.getElementById('attachBtn');
+    const attachMenu = document.getElementById('attachMenu');
+    const optUploadImage = document.getElementById('optUploadImage');
+    const optUploadVideo = document.getElementById('optUploadVideo');
+    const optUploadAudio = document.getElementById('optUploadAudio');
+    const fileInputImage = document.getElementById('fileInputImage');
+    const fileInputVideo = document.getElementById('fileInputVideo');
+    const fileInputAudio = document.getElementById('fileInputAudio');
+    const previewBar = document.getElementById('previewBar');
+
+    attachBtn.onclick = (e) => {
+      e.stopPropagation();
+      attachMenu.classList.toggle('open');
+    };
+
+    document.addEventListener('click', () => {
+      attachMenu.classList.remove('open');
+    });
+
+    optUploadImage.onclick = () => { fileInputImage.click(); attachMenu.classList.remove('open'); };
+    optUploadVideo.onclick = () => { fileInputVideo.click(); attachMenu.classList.remove('open'); };
+    optUploadAudio.onclick = () => { fileInputAudio.click(); attachMenu.classList.remove('open'); };
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    let selectedModel = 'groq';
+    let selectedModelName = 'Groq (GPT-OSS 120B)';
+
+    const modelPickerBtn = document.getElementById('modelPickerBtn');
+    const modelPickerMenu = document.getElementById('modelPickerMenu');
+    const modelPickerLabel = document.getElementById('modelPickerLabel');
+    const modelOptions = document.querySelectorAll('.model-option');
+
+    function syncMultimodalVisibility() {
+      const isMultimodal = selectedModel === 'nemotron-3-nano-omni' || selectedModel === 'mistral-large';
+      const attachWrapper = document.getElementById('attachWrapper');
+      if (attachWrapper) {
+        attachWrapper.style.display = isMultimodal ? 'block' : 'none';
+      }
+      if (!isMultimodal) {
+        if (attachMenu) attachMenu.classList.remove('open');
+        attachedFiles = [];
+        updatePreviewBar();
+      }
+    }
+
+    // --- CONTROLE DO SELETOR ESTILO GEMINI ---
+    modelPickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = modelPickerMenu.classList.toggle('show');
+      modelPickerBtn.classList.toggle('open', isOpen);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.model-picker-wrapper')) {
+        modelPickerMenu.classList.remove('show');
+        modelPickerBtn.classList.remove('open');
+      }
+    });
+
+    modelOptions.forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedModel = opt.getAttribute('data-value');
+        selectedModelName = opt.getAttribute('data-name') || opt.getAttribute('data-label');
+        modelPickerLabel.textContent = opt.getAttribute('data-label');
+
+        modelOptions.forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+
+        modelPickerMenu.classList.remove('show');
+        modelPickerBtn.classList.remove('open');
+
+        syncMultimodalVisibility();
+      });
+    });
+
+    syncMultimodalVisibility();
+
+    async function handleFileSelect(event, type) {
+      const files = Array.from(event.target.files);
+      for (const file of files) {
+        const dataUrl = await fileToBase64(file);
+        attachedFiles.push({ file, type, dataUrl, name: file.name });
+      }
+      event.target.value = '';
+      updatePreviewBar();
+      attachBtn.classList.add('active-glow');
+    }
+
+    fileInputImage.onchange = (e) => handleFileSelect(e, 'image');
+    fileInputVideo.onchange = (e) => handleFileSelect(e, 'video');
+    fileInputAudio.onchange = (e) => handleFileSelect(e, 'audio');
+
+    function updatePreviewBar() {
+      if (attachedFiles.length === 0) {
+        previewBar.style.display = 'none';
+        previewBar.innerHTML = '';
+        attachBtn.classList.remove('active-glow');
+        return;
+      }
+      previewBar.style.display = 'flex';
+      previewBar.innerHTML = '';
+
+      attachedFiles.forEach((item, index) => {
+        const previewItem = document.createElement('div');
+        previewItem.className = 'preview-item';
+        if (item.type === 'image') {
+          previewItem.innerHTML = `
+            <img src="${item.dataUrl}" alt="${item.name}" />
+            <button class="preview-remove" onclick="removeAttachment(${index})">×</button>
+          `;
+        } else if (item.type === 'video') {
+          previewItem.innerHTML = `
+            <video src="${item.dataUrl}"></video>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:10px;color:#fff;">🎥</div>
+            <button class="preview-remove" onclick="removeAttachment(${index})">×</button>
+          `;
+        } else {
+          previewItem.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:20px;">🔊</div>
+            <button class="preview-remove" onclick="removeAttachment(${index})">×</button>
+          `;
+        }
+        previewBar.appendChild(previewItem);
+      });
+    }
+
+    window.removeAttachment = function(index) {
+      attachedFiles.splice(index, 1);
+      updatePreviewBar();
+    };
+
+    async function handleSend() {
+      const texto = promptInput.value.trim();
+      if (!texto && attachedFiles.length === 0) return;
+
+      let userHtml = texto ? `<div>${texto}</div>` : '';
+      if (attachedFiles.length > 0) {
+        userHtml += '<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">';
+        attachedFiles.forEach(f => {
+          if (f.type === 'image') {
+            userHtml += `<img src="${f.dataUrl}" class="chat-img-thumb" alt="${f.name}" />`;
+          } else if (f.type === 'video') {
+            userHtml += `<video src="${f.dataUrl}" controls class="chat-img-thumb"></video>`;
+          } else {
+            userHtml += `<audio src="${f.dataUrl}" controls style="margin-top:6px;max-width:240px;"></audio>`;
+          }
+        });
+        userHtml += '</div>';
+      }
+
+      appendMessage('user', userHtml);
+      promptInput.value = '';
+      sendBtn.disabled = true;
+
+      const mediaPayload = attachedFiles.map(f => f.dataUrl);
+      attachedFiles = [];
+      updatePreviewBar();
+
+      // Gerenciamento do ID de conversa no localStorage
+      let convs = getStoredConversations();
+      if (!currentConversationId) {
+        currentConversationId = 'chat_' + Date.now();
+        const firstTitle = (texto || 'Análise de Mídia').slice(0, 36);
+        convs.unshift({
+          id: currentConversationId,
+          title: firstTitle,
+          model: selectedModel,
+          modelName: selectedModelName,
+          createdAt: new Date().toISOString(),
+          messages: []
+        });
+      }
+
+      const activeConv = convs.find(c => c.id === currentConversationId);
+      if (activeConv) {
+        activeConv.messages.push({
+          role: 'user',
+          text: texto,
+          media: mediaPayload
+        });
+        saveStoredConversations(convs);
+        renderHistorySidebar();
+      }
+
+      const modelo = selectedModel || 'groq';
+      const pais = paisFilter.value ? paisFilter.value.trim() : null;
+      const topK = parseInt(topKSelect.value, 10) || 4;
+
+      const loadingMsg = appendMessage('lumina', `
+        <div class="typing-indicator">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <span style="font-size:13.5px;color:var(--text-muted);margin-left:6px;">Consultando base vetorial e gerando resposta com <strong>${selectedModelName}</strong>...</span>
+        </div>
+      `, selectedModelName, false);
+
+      try {
+        const res = await fetch(`${API_BASE}/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            mensagem: texto, 
+            modelo,
+            imagens: mediaPayload,
+            historico: conversationHistory,
+            pais, 
+            topK 
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `Erro HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let rawResponse = '';
+        let hasReceivedTokens = false;
+        let lastSources = [];
+        let lastMetrics = null;
+        let finalModelUsed = selectedModelName;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+
+          for (const block of parts) {
+            const trimmed = block.trim();
+            if (!trimmed) continue;
+
+            const lines = trimmed.split('\n');
+            let eventType = 'message';
+            let dataStr = '';
+
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                eventType = line.slice(6).trim();
+              } else if (line.startsWith('data:')) {
+                dataStr = line.slice(5).trim();
+              }
+            }
+
+            if (eventType === 'metadata') {
+              try {
+                const meta = JSON.parse(dataStr);
+                lastSources = meta.documentosRecuperados || [];
+                lastMetrics = meta.metricas || null;
+                // Contexto só é atualizado pelo evento 'usage' (valor final real), evitando oscilação
+                if (meta.modeloUtilizado) {
+                  finalModelUsed = meta.modeloUtilizado;
+                  const row = loadingMsg.closest('.message-row');
+                  if (row) {
+                    const headerLabel = row.querySelector('.ai-header span:last-child');
+                    if (headerLabel) headerLabel.textContent = `Lumina • ${finalModelUsed}`;
+                  }
+                }
+                renderSources(lastSources, lastMetrics, finalModelUsed);
+              } catch (e) {}
+            } else if (eventType === 'usage') {
+              try {
+                const { contexto } = JSON.parse(dataStr);
+                if (contexto) {
+                  atualizarBarraContexto(contexto);
+                  if (lastMetrics) lastMetrics.contexto = contexto;
+                }
+              } catch (e) {}
+            } else if (eventType === 'token') {
+              try {
+                const { token } = JSON.parse(dataStr);
+                if (token) {
+                  if (!hasReceivedTokens) {
+                    hasReceivedTokens = true;
+                    loadingMsg.innerHTML = '';
+                  }
+                  rawResponse += token;
+                  loadingMsg.innerHTML = marked.parse(rawResponse);
+                }
+              } catch (e) {}
+            } else if (eventType === 'error') {
+              try {
+                const errData = JSON.parse(dataStr);
+                rawResponse += `\n⚠️ **Erro:** ${errData.erro || 'Falha no processamento.'}`;
+                loadingMsg.innerHTML = marked.parse(rawResponse);
+              } catch (e) {}
+            }
+          }
+        }
+
+        const finalHtml = marked.parse(rawResponse || 'Nenhuma resposta gerada.');
+        loadingMsg.innerHTML = finalHtml;
+        loadingMsg.dataset.rawText = rawResponse;
+
+        const row = loadingMsg.closest('.message-row');
+        if (row) {
+          const actions = row.querySelector('.message-actions');
+          if (actions) actions.style.display = 'flex';
+        }
+
+        if (voiceEnabled && rawResponse) {
+          const playBtn = row ? row.querySelector('.btn-play-audio') : null;
+          speakText(rawResponse, playBtn);
+        }
+
+        // Salva a resposta da Lumina no localStorage
+        const latestConvs = getStoredConversations();
+        const convToUpdate = latestConvs.find(c => c.id === currentConversationId);
+        if (convToUpdate) {
+          convToUpdate.messages.push({
+            role: 'lumina',
+            html: finalHtml,
+            rawText: rawResponse,
+            modelName: finalModelUsed,
+            docs: lastSources,
+            metricas: lastMetrics,
+            modeloUtilizado: finalModelUsed
+          });
+          saveStoredConversations(latestConvs);
+          renderHistorySidebar();
+        }
+
+        // Atualiza o histórico local da conversa em memória (acumula todo o diálogo)
+        if (rawResponse) {
+          conversationHistory.push(
+            { role: 'user', content: texto || "Imagem/mídia anexada" },
+            { role: 'assistant', content: rawResponse }
+          );
+        }
+      } catch (err) {
+        loadingMsg.innerHTML = `⚠️ <strong>Erro ao conectar com o servidor vetorial:</strong> ${err.message}`;
+      } finally {
+        sendBtn.disabled = false;
+        promptInput.focus();
+      }
+    }
+
+    sendBtn.onclick = handleSend;
+    promptInput.onkeydown = (e) => { if (e.key === 'Enter') handleSend(); };
+
+    // Inicializa a lista de histórico na carga da página
+    renderHistorySidebar();
+  </script>
+</body>
+</html>
