@@ -34,7 +34,7 @@ function janelaContexto(modelo) {
     if (m === 'gemma-2-2b') return 8192;
     if (m === 'gemini') return 1048576;           // Gemini 2.5 Flash: 1M tokens
     if (m.includes('mistral')) return 1048576;    // Mistral Large 4: 1M tokens
-    if (m.startsWith('kimi') || m === 'nvidia') return 262144;  // Kimi: 256K
+    if (m.startsWith('glm') || m.startsWith('kimi') || m === 'nvidia') return 131072; // GLM 5.3 Flash: 128K
     if (m.startsWith('nemotron')) return 131072;  // Nemotron: 128K
     if (m.startsWith('gpt-oss')) return 131072;   // GPT-OSS 20B/120B: 128K
     return 131072;                                // Groq (gpt-oss-120b): 128K
@@ -303,30 +303,44 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
             respostaTexto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta do Gemini.";
             modeloIdentificado = `Google Gemini (${geminiModel})`;
 
-        } else if (modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
+        } else if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
             const nvidiaApiKey = process.env.NVIDIA_API_KEY;
-            const nvidiaModel = process.env.NVIDIA_MODEL || "moonshotai/kimi-k3";
+            const nvidiaModel = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
 
             if (!nvidiaApiKey) {
                 return res.status(400).json({ resposta: "❌ NVIDIA_API_KEY não configurada no arquivo .env." });
             }
 
-            const nvidiaRes = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${nvidiaApiKey}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: nvidiaModel,
-                    messages: messagesPayload,
-                    temperature: 0.3,
-                    max_tokens: 4096
-                })
-            });
-            const nvidiaData = await nvidiaRes.json();
-            respostaTexto = nvidiaData?.choices?.[0]?.message?.content || "Sem resposta do Kimi-3.";
-            modeloIdentificado = `Kimi-3 (NVIDIA • ${nvidiaModel})`;
+            try {
+                const nvidiaRes = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${nvidiaApiKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: nvidiaModel,
+                        messages: messagesPayload,
+                        temperature: 0.5,
+                        top_p: 1,
+                        max_tokens: 1024
+                    }),
+                    signal: AbortSignal.timeout(45000)
+                });
+                const nvidiaData = await nvidiaRes.json();
+                if (!nvidiaRes.ok) {
+                    respostaTexto = `⚠️ **Erro da API NVIDIA (${nvidiaRes.status}):** ${nvidiaData.detail || nvidiaData.error?.message || JSON.stringify(nvidiaData)}.`;
+                } else {
+                    respostaTexto = nvidiaData?.choices?.[0]?.message?.content
+                        || nvidiaData?.choices?.[0]?.message?.reasoning_content
+                        || "Sem resposta do GLM 5.3 Flash.";
+                    req.tokensIn = nvidiaData?.usage?.prompt_tokens || 0;
+                    req.tokensOut = nvidiaData?.usage?.completion_tokens || 0;
+                }
+            } catch (err) {
+                respostaTexto = `⚠️ Erro/timeout ao conectar ao endpoint da NVIDIA (${nvidiaModel}): ${err.message}`;
+            }
+            modeloIdentificado = `GLM 5.3 Flash (NVIDIA • ${nvidiaModel})`;
 
         } else if (modelo === 'gpt-oss-20b' || modelo === 'gpt-oss') {
             const gptOssApiKey = process.env.GPT_OSS_API_KEY || process.env.NVIDIA_API_KEY;
@@ -654,7 +668,7 @@ app.post('/chat/stream', async (req, res) => {
         if (modelo === 'gemini') modeloDisplay = "Gemini 2.5 Flash (Google)";
         else if (modelo === 'qwen' || modelo === 'qwen2.5:1.5b' || modelo === 'local' || modelo === 'ic-qwen' || modelo === 'qwen-2.5-1.5b') modeloDisplay = "Qwen 2.5 1.5B (Local Ollama)";
         else if (modelo === 'mistral-large' || modelo === 'mistral' || modelo === 'mistral-large-4') modeloDisplay = "Mistral Large 4 (NVIDIA • 1T Multimodal)";
-        else if (modelo === 'kimi-3' || modelo === 'kimi') modeloDisplay = "Kimi-3 (NVIDIA • Moonshot)";
+        else if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') modeloDisplay = "GLM 5.3 Flash (NVIDIA • Z.ai)";
         else if (modelo === 'nemotron-3-nano-omni') modeloDisplay = "Nemotron 3 Nano Omni 30B (NVIDIA • Multimodal)";
         else if (modelo === 'nemotron-3-super-120b') modeloDisplay = "Nemotron 3.5 Super VL 120B (NVIDIA)";
         else if (modelo === 'gpt-oss-20b') modeloDisplay = "GPT-OSS 20B (NVIDIA)";
@@ -794,11 +808,11 @@ app.post('/chat/stream', async (req, res) => {
             // Demais modelos (NVIDIA NIM / Ollama) via OpenAI-compatible stream
             let apiUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
             let apiKey = process.env.NVIDIA_API_KEY;
-            let modelName = process.env.NVIDIA_MODEL || "moonshotai/kimi-k3";
+            let modelName = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
 
-            if (modelo === 'kimi-3' || modelo === 'kimi') {
+            if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
                 apiKey = process.env.NVIDIA_API_KEY;
-                modelName = process.env.NVIDIA_MODEL || "moonshotai/kimi-k3";
+                modelName = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
             } else if (modelo === 'nemotron-3-nano-omni') {
                 apiKey = process.env.NVIDIA_NEMOTRON_OMNI_API_KEY || process.env.NVIDIA_API_KEY;
                 modelName = process.env.NEMOTRON_OMNI_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
@@ -827,11 +841,14 @@ app.post('/chat/stream', async (req, res) => {
             const streamBody = {
                 model: modelName,
                 messages: messagesPayload,
-                temperature: modelName.includes("mistral") ? 0.5 : 0.6,
-                max_tokens: apiUrl.includes("nvidia.com") ? 4096 : 1536,
+                temperature: (modelName.includes("mistral") || modelName.includes("glm")) ? 0.5 : 0.6,
+                max_tokens: apiUrl.includes("nvidia.com") ? (modelName.includes("glm") ? 1024 : 4096) : 1536,
                 stream: true,
                 stream_options: { include_usage: true }
             };
+            if (modelName.includes("glm")) {
+                streamBody.top_p = 1;
+            }
             if (modelName.includes("mistral")) {
                 streamBody.reasoning_effort = process.env.MISTRAL_REASONING_EFFORT || "medium";
             }
@@ -842,7 +859,8 @@ app.post('/chat/stream', async (req, res) => {
                     "Authorization": `Bearer ${apiKey}`,
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(streamBody)
+                body: JSON.stringify(streamBody),
+                signal: AbortSignal.timeout(apiUrl.includes("nvidia.com") ? 60000 : 120000)
             });
 
             if (!streamRes.ok) {
