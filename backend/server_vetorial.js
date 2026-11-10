@@ -102,7 +102,7 @@ function construirSystemPrompt(contextoRecuperado) {
            - Evite generalizações eurocentristas ou referências a dados de regiões não cobertas pelo projeto.
 
         4. **ABSTENÇÃO ATIVA E EXPLÍCITA (Hard Stop — sem exceções):**
-           - Se a pergunta pedir dados ausentes na base vetorial: responda APENAS com *"A base vetorial do Projeto ELLAS não possui esse dado específico."* e encerre.
+           - Se a pergunta não houver uma resposta coerente ao dados da recuperação, diga que não há dados para aquela pergunta.
            - Se a pergunta for uma armadilha (premissa falsa, escopo ilícito, tema fora de STEM/Gênero): responda APENAS com *"Como especialista do Projeto ELLAS, meu escopo é restrito à igualdade de gênero em STEM na América Latina. Não possuo informações ou orientações sobre este tema."* e encerre imediatamente. Não elabore, não contextualize, não ofereça alternativas.
 
         5. **VIABILIDADE PRÁTICA:**
