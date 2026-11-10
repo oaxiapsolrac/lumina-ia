@@ -102,7 +102,7 @@ function construirSystemPrompt(contextoRecuperado) {
            - Evite generalizações eurocentristas ou referências a dados de regiões não cobertas pelo projeto.
 
         4. **ABSTENÇÃO ATIVA E EXPLÍCITA (Hard Stop — sem exceções):**
-           - Se a pergunta não houver uma resposta coerente ao dados da recuperação, diga que não há dados para aquela pergunta.
+           - Se a pergunta pedir dados ausentes na base vetorial: responda APENAS com *"A base vetorial do Projeto ELLAS não possui esse dado específico."* e encerre.
            - Se a pergunta for uma armadilha (premissa falsa, escopo ilícito, tema fora de STEM/Gênero): responda APENAS com *"Como especialista do Projeto ELLAS, meu escopo é restrito à igualdade de gênero em STEM na América Latina. Não possuo informações ou orientações sobre este tema."* e encerre imediatamente. Não elabore, não contextualize, não ofereça alternativas.
 
         5. **VIABILIDADE PRÁTICA:**
@@ -953,7 +953,90 @@ function prepareTextForSpeech(text) {
         .trim();
 }
 
-// 7. Síntese de Voz com Gemini 3.8 Flash TTS (Vozes neurais pt-BR / Studio)
+// Cache simples de TTS em memória (evita re-gasto de cota ao repetir mensagens)
+const ttsAudioCache = new Map();
+
+function mapearVozStudio(voz) {
+    const v = String(voz || '');
+    if (v === 'pt-br-assistant-11') return 'Puck';
+    if (v.startsWith('pt-br-')) return 'Kore';
+    return v || 'Kore';
+}
+
+function pcm16ToWav(pcmBuffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmBuffer.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(pcmBuffer.length, 40);
+    return Buffer.concat([header, pcmBuffer]);
+}
+
+async function sintetizarInteractionsTTS(apiKey, model, textoLimpo, voiceName) {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model,
+            input: [{
+                type: "user_input",
+                content: [{
+                    type: "text",
+                    text: textoLimpo,
+                    annotations: [{ type: "speech_metadata", style: "natural, clear and fluent Brazilian Portuguese" }]
+                }]
+            }],
+            response_format: { type: "audio" },
+            generation_config: { speech_config: [{ voice: voiceName }] }
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, status: res.status, erro: data.error?.message || JSON.stringify(data) };
+    const audioBlock = [
+        ...(data.steps || []).filter(s => s.type === 'model_output').flatMap(s => s.content || []),
+        ...(data.outputs || [])
+    ].reverse().find(c => c && c.type === 'audio' && c.data);
+    if (!audioBlock?.data) return { ok: false, status: 502, erro: "Sem bloco de áudio no retorno." };
+    return { ok: true, buffer: Buffer.from(audioBlock.data, 'base64'), mimeType: audioBlock.mime_type || 'audio/wav' };
+}
+
+async function sintetizarGemini25TTS(apiKey, textoLimpo, voiceName) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: `Fale em português do Brasil de forma natural e clara: ${textoLimpo}` }] }],
+            generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+            }
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, status: res.status, erro: data.error?.message || JSON.stringify(data) };
+    const part = (data.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.data);
+    if (!part) return { ok: false, status: 502, erro: "Sem inlineData no gemini-2.5-flash-preview-tts." };
+    const raw = Buffer.from(part.inlineData.data, 'base64');
+    const mime = part.inlineData.mimeType || 'audio/wav';
+    if (mime.includes('L16') || mime.includes('pcm')) {
+        return { ok: true, buffer: pcm16ToWav(raw, 24000, 1, 16), mimeType: 'audio/wav' };
+    }
+    return { ok: true, buffer: raw, mimeType: mime };
+}
+
+// 7. Síntese de Voz com Gemini TTS (Multi-modelo com fallback para não estourar cota)
 app.post('/tts', async (req, res) => {
     try {
         const { texto, voz = "pt-br-assistant-5" } = req.body;
@@ -966,60 +1049,45 @@ app.post('/tts', async (req, res) => {
             return res.status(500).json({ erro: "Chave GEMINI_API_KEY não configurada no servidor." });
         }
 
-        // Limpa markdown, tabelas e URLs para leitura natural
         const textoLimpo = prepareTextForSpeech(texto);
         if (!textoLimpo) {
             return res.status(400).json({ erro: "Nenhum texto legível após limpeza." });
         }
 
-        const ttsModel = process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-tts";
-        const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-            method: "POST",
-            headers: {
-                "x-goog-api-key": geminiApiKey,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: ttsModel,
-                input: [{
-                    type: "user_input",
-                    content: [{
-                        type: "text",
-                        text: textoLimpo,
-                        annotations: [{
-                            type: "speech_metadata",
-                            style: "natural, clear and fluent Brazilian Portuguese"
-                        }]
-                    }]
-                }],
-                response_format: { type: "audio" },
-                generation_config: {
-                    speech_config: [{ voice: String(voz || "pt-br-assistant-5") }]
+        const voiceId = String(voz || "pt-br-assistant-5");
+        const cacheKey = `${voiceId}::${textoLimpo}`;
+        if (ttsAudioCache.has(cacheKey)) {
+            const cached = ttsAudioCache.get(cacheKey);
+            res.setHeader('Content-Type', cached.mimeType);
+            res.setHeader('Content-Length', cached.buffer.length);
+            return res.send(cached.buffer);
+        }
+
+        const studioVoice = mapearVozStudio(voiceId);
+        const tentativas = [
+            () => sintetizarInteractionsTTS(geminiApiKey, process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-lite-tts", textoLimpo, voiceId),
+            () => sintetizarInteractionsTTS(geminiApiKey, "gemini-3.8-flash-tts", textoLimpo, voiceId),
+            () => sintetizarInteractionsTTS(geminiApiKey, "gemini-3.1-flash-tts-preview", textoLimpo, studioVoice),
+            () => sintetizarGemini25TTS(geminiApiKey, textoLimpo, studioVoice)
+        ];
+
+        let ultimoErro = { status: 500, erro: "Falha no Gemini TTS." };
+        for (const tentar of tentativas) {
+            const r = await tentar();
+            if (r.ok) {
+                if (ttsAudioCache.size >= 30) {
+                    ttsAudioCache.delete(ttsAudioCache.keys().next().value);
                 }
-            })
-        });
-
-        const data = await geminiRes.json();
-        if (!geminiRes.ok) {
-            console.error(`❌ Erro do Gemini TTS (${geminiRes.status}):`, data);
-            return res.status(geminiRes.status).json({
-                erro: data.error?.message || "Erro no serviço de voz Gemini TTS."
-            });
+                ttsAudioCache.set(cacheKey, { buffer: r.buffer, mimeType: r.mimeType });
+                res.setHeader('Content-Type', r.mimeType);
+                res.setHeader('Content-Length', r.buffer.length);
+                return res.send(r.buffer);
+            }
+            ultimoErro = r;
+            console.warn(`⚠️ Fallback Gemini TTS (${r.status}): ${r.erro}`);
         }
 
-        const audioBlock = [
-            ...(data.steps || []).filter(s => s.type === 'model_output').flatMap(s => s.content || []),
-            ...(data.outputs || [])
-        ].reverse().find(c => c && c.type === 'audio' && c.data);
-
-        if (!audioBlock || !audioBlock.data) {
-            return res.status(502).json({ erro: "Gemini TTS não retornou dados de áudio." });
-        }
-
-        const audioBuffer = Buffer.from(audioBlock.data, 'base64');
-        res.setHeader('Content-Type', audioBlock.mime_type || 'audio/wav');
-        res.setHeader('Content-Length', audioBuffer.byteLength);
-        res.send(audioBuffer);
+        return res.status(ultimoErro.status || 502).json({ erro: ultimoErro.erro });
 
     } catch (err) {
         console.error("Erro no processamento do Gemini TTS:", err);

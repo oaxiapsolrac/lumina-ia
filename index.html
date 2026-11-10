@@ -1958,6 +1958,8 @@
     let availableVoices = [];
     let ttsAbortController = null;
     const globalAudioPlayer = new Audio();
+    let ttsAudioCtx = null;
+    let ttsBufferSource = null;
 
     function classificarPrioridadeVoz(v) {
       const lang = (v.lang || '').replace('_', '-').toLowerCase();
@@ -2045,6 +2047,15 @@
     }
 
     function unlockDeviceAudio() {
+      try {
+        if (!ttsAudioCtx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) ttsAudioCtx = new AC();
+        }
+        if (ttsAudioCtx && ttsAudioCtx.state === 'suspended') {
+          ttsAudioCtx.resume().catch(() => {});
+        }
+      } catch (e) {}
       if ('speechSynthesis' in window && availableVoices.length === 0) {
         popularSeletorVozes();
       }
@@ -2125,10 +2136,15 @@
         ttsAbortController.abort();
         ttsAbortController = null;
       }
+      if (ttsBufferSource) {
+        try { ttsBufferSource.stop(); } catch (e) {}
+        ttsBufferSource = null;
+      }
       try {
+        globalAudioPlayer.onended = null;
+        globalAudioPlayer.onerror = null;
         globalAudioPlayer.pause();
-        globalAudioPlayer.removeAttribute('src');
-        globalAudioPlayer.load();
+        globalAudioPlayer.currentTime = 0;
       } catch (e) {}
       if ('speechSynthesis' in window) {
         try {
@@ -2277,14 +2293,21 @@
         if (sessionId !== currentSpeechSessionId) return;
 
         if (!res.ok) {
-          console.warn("Gemini TTS falhou, usando voz do dispositivo como fallback:", res.statusText);
-          speakTextNative(texto, triggerBtn);
+          let errMsg = res.statusText;
+          try {
+            const errJson = await res.json();
+            errMsg = errJson.erro || errMsg;
+          } catch {}
+          console.warn("Gemini TTS indisponível neste momento:", errMsg);
+          stopCurrentAudio();
+          if (triggerBtn) triggerBtn.title = `Gemini TTS indisponível: ${errMsg}`;
           return;
         }
 
-        const audioBlob = await res.blob();
+        const audioArrayBuffer = await res.arrayBuffer();
         if (sessionId !== currentSpeechSessionId) return;
 
+        const audioBlob = new Blob([audioArrayBuffer], { type: res.headers.get('Content-Type') || 'audio/wav' });
         const audioUrl = URL.createObjectURL(audioBlob);
         globalAudioPlayer.src = audioUrl;
 
@@ -2295,30 +2318,59 @@
           triggerBtn.title = "Parar leitura";
         }
 
-        globalAudioPlayer.onended = () => {
-          if (sessionId === currentSpeechSessionId) {
-            stopCurrentAudio();
-            URL.revokeObjectURL(audioUrl);
+        try {
+          globalAudioPlayer.onended = () => {
+            if (sessionId === currentSpeechSessionId) {
+              stopCurrentAudio();
+              URL.revokeObjectURL(audioUrl);
+            }
+          };
+          globalAudioPlayer.onerror = () => {
+            if (sessionId === currentSpeechSessionId) {
+              stopCurrentAudio();
+              URL.revokeObjectURL(audioUrl);
+            }
+          };
+          await globalAudioPlayer.play();
+        } catch (playErr) {
+          // Se o navegador bloquear autoplay após fetch longo, usa o AudioContext já desbloqueado no clique
+          URL.revokeObjectURL(audioUrl);
+          if (sessionId !== currentSpeechSessionId) return;
+          if (!ttsAudioCtx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) ttsAudioCtx = new AC();
           }
-        };
-
-        globalAudioPlayer.onerror = () => {
-          if (sessionId === currentSpeechSessionId) {
-            stopCurrentAudio();
+          if (ttsAudioCtx) {
+            if (ttsAudioCtx.state === 'suspended') await ttsAudioCtx.resume();
+            const decoded = await ttsAudioCtx.decodeAudioData(audioArrayBuffer.slice(0));
+            if (sessionId !== currentSpeechSessionId) return;
+            const source = ttsAudioCtx.createBufferSource();
+            source.buffer = decoded;
+            source.connect(ttsAudioCtx.destination);
+            ttsBufferSource = source;
+            source.onended = () => {
+              if (sessionId === currentSpeechSessionId) stopCurrentAudio();
+            };
+            source.start(0);
+          } else {
+            throw playErr;
           }
-        };
-
-        await globalAudioPlayer.play();
+        }
       } catch (err) {
         if (err.name === 'AbortError') return;
-        console.warn("Falha no Gemini TTS, alternando para voz local:", err);
+        console.warn("Erro na reprodução Gemini TTS (mantendo voz Gemini selecionada):", err);
         if (sessionId === currentSpeechSessionId) {
-          speakTextNative(texto, triggerBtn);
+          stopCurrentAudio();
+          if (triggerBtn) triggerBtn.title = "Erro ao reproduzir voz Gemini";
         }
       }
     }
 
     function speakText(texto, triggerBtn = null) {
+      const selectVal = document.getElementById('voiceSelect')?.value;
+      if (selectVal) {
+        selectedVoicePref = selectVal;
+      }
       if (selectedVoicePref && selectedVoicePref.startsWith('gemini:')) {
         const voiceId = selectedVoicePref.slice(7) || 'pt-br-assistant-5';
         speakTextGemini(texto, voiceId, triggerBtn);
@@ -2629,6 +2681,7 @@
     async function handleSend() {
       const texto = promptInput.value.trim();
       if (!texto && attachedFiles.length === 0) return;
+      unlockDeviceAudio();
 
       let userHtml = texto ? `<div>${texto}</div>` : '';
       if (attachedFiles.length > 0) {
