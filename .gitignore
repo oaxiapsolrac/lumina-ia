@@ -1,6 +1,6 @@
-# Dependências
-node_modules/
-backend/node_modules/
+# Dependências (sem barra final também cobre o symlink local backend/node_modules)
+node_modules
+backend/node_modules
 
 # Variáveis de ambiente e segredos
 .env
@@ -13,4 +13,9 @@ backend/.env.*
 # Sistema e caches temporários
 .DS_Store
 *.log
+
+# Cópias de segurança locais (reindexação e correções)
+backend/backups/
+backend/vector_store_cache.anterior.json
+backend/vector_store_cache.json.tmp
 

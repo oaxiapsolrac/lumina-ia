@@ -11,6 +11,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Sanitiza o HTML gerado a partir do Markdown do LLM antes de inserir na página -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <style>
     /* 1. Fonte Principal e Fallback (Root) & Variáveis */
     :root {
@@ -1486,7 +1488,7 @@
                 <div class="model-name">GPT-OSS 120B</div>
                 <div class="model-desc">Raciocínio complexo open-source</div>
               </div>
-              <div class="model-badge">NVIDIA</div>
+              <div class="model-badge">Groq</div>
             </div>
 
             <div class="model-option" data-value="minimax-m3.1-flash" data-label="MiniMax 3.1" data-name="MiniMax M3.1 Flash">
@@ -1627,6 +1629,36 @@
 
   <script>
     const API_BASE = "https://lumina-backend-zsak.onrender.com";
+
+    // --- SEGURANÇA DE RENDERIZAÇÃO ---
+    // Texto do usuário, campos dos documentos e mensagens de erro entram como texto, nunca como HTML
+    function escapeHtml(valor) {
+      return String(valor ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Markdown do LLM -> HTML sanitizado (remove <script>, on*=, javascript: etc.)
+    function renderMarkdown(texto) {
+      const bruto = String(texto ?? '');
+      if (window.DOMPurify && window.marked) {
+        return DOMPurify.sanitize(marked.parse(bruto));
+      }
+      // Sem o sanitizador (CDN fora do ar), mostra o texto puro em vez de arriscar HTML não confiável
+      return `<p>${escapeHtml(bruto).replace(/\n/g, '<br>')}</p>`;
+    }
+
+    // Tipos de anexo aceitos por modelo (espelha backend/anexos.js)
+    const MIDIAS_POR_MODELO = {
+      'nemotron-3-nano-omni': ['image', 'video', 'audio'],
+      'mistral-large': ['image']
+    };
+    const LIMITE_ANEXOS = { image: 8, video: 1, audio: 1 };
+    const LIMITE_TOTAL_ANEXOS_MB = 18; // o servidor aceita 25 MB por requisição; base64 aumenta ~33%
+
     const chatContainer = document.getElementById('chatContainer');
     const scrollArea = document.getElementById('scrollArea');
     const promptInput = document.getElementById('promptInput');
@@ -1663,8 +1695,34 @@
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(convs));
       } catch (e) {
-        console.error('Erro ao salvar histórico no localStorage:', e);
+        // Cota do localStorage (~5 MB) estourada: históricos antigos podem ter mídias em base64.
+        // Remove só as mídias (mantém os textos) e tenta de novo.
+        const semMidia = convs.map(c => ({
+          ...c,
+          messages: (c.messages || []).map(m => {
+            if (!Array.isArray(m.media)) return m;
+            return { ...m, media: m.media.map(f => (typeof f === 'string' ? { tipo: (f.match(/^data:([a-z]+)\//) || [])[1] || 'arquivo', nome: 'anexo' } : f)) };
+          })
+        }));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(semMidia));
+          console.warn('Histórico salvo sem as mídias antigas (limite do localStorage atingido).');
+        } catch (e2) {
+          console.error('Erro ao salvar histórico no localStorage:', e2);
+        }
       }
+    }
+
+    // Descreve um anexo salvo no histórico. Mensagens antigas guardavam o data URL; as novas guardam só tipo e nome.
+    function htmlMidiaHistorico(f) {
+      if (typeof f === 'string') {
+        if (f.startsWith('data:image')) return `<img src="${escapeHtml(f)}" class="chat-img-thumb" alt="Imagem" />`;
+        if (f.startsWith('data:video')) return `<video src="${escapeHtml(f)}" controls class="chat-img-thumb"></video>`;
+        if (f.startsWith('data:audio')) return `<audio src="${escapeHtml(f)}" controls style="margin-top:6px;max-width:240px;"></audio>`;
+        return '';
+      }
+      const icone = { image: '🖼️', video: '🎥', audio: '🔊' }[f?.tipo] || '📎';
+      return `<span class="doc-tag">${icone} ${escapeHtml(f?.nome || 'anexo')} (não salvo no histórico)</span>`;
     }
 
     function renderHistorySidebar() {
@@ -1683,7 +1741,7 @@
           <span class="history-item-icon">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </span>
-          <span class="history-item-title" title="${c.title || 'Conversa'}">${c.title || 'Conversa sem título'}</span>
+          <span class="history-item-title" title="${escapeHtml(c.title || 'Conversa')}">${escapeHtml(c.title || 'Conversa sem título')}</span>
           <button class="history-delete-btn" title="Excluir conversa">✕</button>
         `;
 
@@ -1730,24 +1788,18 @@
 
       (conv.messages || []).forEach(m => {
         if (m.role === 'user') {
-          let userHtml = m.text ? `<div>${m.text}</div>` : '';
+          let userHtml = m.text ? `<div>${escapeHtml(m.text)}</div>` : '';
           if (m.media && m.media.length > 0) {
             userHtml += '<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">';
-            m.media.forEach(f => {
-              if (typeof f === 'string' && f.startsWith('data:image')) {
-                userHtml += `<img src="${f}" class="chat-img-thumb" alt="Imagem" />`;
-              } else if (typeof f === 'string' && f.startsWith('data:video')) {
-                userHtml += `<video src="${f}" controls class="chat-img-thumb"></video>`;
-              } else if (typeof f === 'string' && f.startsWith('data:audio')) {
-                userHtml += `<audio src="${f}" controls style="margin-top:6px;max-width:240px;"></audio>`;
-              }
-            });
+            m.media.forEach(f => { userHtml += htmlMidiaHistorico(f); });
             userHtml += '</div>';
           }
           appendMessage('user', userHtml);
           conversationHistory.push({ role: 'user', content: m.text || "Mídia anexada" });
         } else if (m.role === 'lumina') {
-          const luminaMsg = appendMessage('lumina', m.html || marked.parse(m.rawText || ''), m.modelName || selectedModelName);
+          // Re-renderiza a partir do Markdown original (sanitizado); o HTML salvo só é usado em históricos sem rawText
+          const htmlSeguro = m.rawText ? renderMarkdown(m.rawText) : (window.DOMPurify ? DOMPurify.sanitize(m.html || '') : escapeHtml(m.html || ''));
+          const luminaMsg = appendMessage('lumina', htmlSeguro, m.modelName || selectedModelName);
           if (luminaMsg) luminaMsg.dataset.rawText = m.rawText || '';
           conversationHistory.push({ role: 'assistant', content: m.rawText || m.html });
           if (m.docs && m.docs.length > 0) {
@@ -1913,7 +1965,7 @@
         row.innerHTML = `
           <div class="ai-header">
             <span class="sparkle-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent-pink)"><path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z"/></svg></span>
-            <span>Lumina • ${displayModel}</span>
+            <span>Lumina • ${escapeHtml(displayModel)}</span>
           </div>
           <div class="bubble">${html}</div>
           <div class="message-actions" style="display: ${showActions ? 'flex' : 'none'};">
@@ -2500,7 +2552,8 @@
     function renderSources(docs, metricas, modeloUtilizado) {
       if (metricas) {
         document.getElementById('tempoBusca').innerText = `${metricas.tempoBuscaVetorialMs} ms`;
-        document.getElementById('tempoLLM').innerText = `${metricas.tempoLLMMs} ms`;
+        // No streaming o tempo do LLM só chega no evento final 'usage'; até lá mostra "—"
+        document.getElementById('tempoLLM').innerText = metricas.tempoLLMMs != null ? `${metricas.tempoLLMMs} ms` : '—';
         const topKSol = metricas.topKSolicitado || (docs ? docs.length : '-');
         document.getElementById('docsUtilizados').innerText = `${metricas.documentosUtilizados} (Top-K: ${topKSol})`;
         document.getElementById('paisFiltroInfo').innerText = metricas.filtroPais || 'Todos';
@@ -2523,14 +2576,14 @@
         card.className = 'doc-card';
         card.innerHTML = `
           <div class="doc-card-header">
-            <span class="doc-name">[#${idx + 1}] ${doc.nome}</span>
-            <span class="doc-score">${(doc.score * 100).toFixed(1)}% match</span>
+            <span class="doc-name">[#${idx + 1}] ${escapeHtml(doc.nome)}</span>
+            <span class="doc-score">${(Number(doc.score) * 100).toFixed(1)}% match</span>
           </div>
           <div class="doc-meta">
-            <span class="doc-tag">📍 ${doc.pais}</span>
-            <span class="doc-tag">🏷️ ${doc.categoria}</span>
+            <span class="doc-tag">📍 ${escapeHtml(doc.pais)}</span>
+            <span class="doc-tag">🏷️ ${escapeHtml(doc.categoria)}</span>
           </div>
-          <div class="doc-details">${doc.detalhes}</div>
+          <div class="doc-details">${escapeHtml(doc.detalhes)}</div>
         `;
         sourcesList.appendChild(card);
       });
@@ -2579,16 +2632,24 @@
     const modelOptions = document.querySelectorAll('.model-option');
 
     function syncMultimodalVisibility() {
-      const isMultimodal = selectedModel === 'nemotron-3-nano-omni' || selectedModel === 'mistral-large';
+      const midias = MIDIAS_POR_MODELO[selectedModel] || [];
+      const isMultimodal = midias.length > 0;
       const attachWrapper = document.getElementById('attachWrapper');
       if (attachWrapper) {
         attachWrapper.style.display = isMultimodal ? 'block' : 'none';
       }
+      // Mostra só os tipos de anexo que o modelo aceita (ex.: Mistral Large 4 não aceita vídeo nem áudio)
+      if (optUploadImage) optUploadImage.style.display = midias.includes('image') ? '' : 'none';
+      if (optUploadVideo) optUploadVideo.style.display = midias.includes('video') ? '' : 'none';
+      if (optUploadAudio) optUploadAudio.style.display = midias.includes('audio') ? '' : 'none';
+
       if (!isMultimodal) {
         if (attachMenu) attachMenu.classList.remove('open');
         attachedFiles = [];
-        updatePreviewBar();
+      } else {
+        attachedFiles = attachedFiles.filter(f => midias.includes(f.type));
       }
+      updatePreviewBar();
     }
 
     // --- CONTROLE DO SELETOR ESTILO GEMINI ---
@@ -2626,13 +2687,25 @@
 
     async function handleFileSelect(event, type) {
       const files = Array.from(event.target.files);
+      event.target.value = '';
+      const avisos = [];
       for (const file of files) {
+        const jaTem = attachedFiles.filter(f => f.type === type).length;
+        if (jaTem >= LIMITE_ANEXOS[type]) {
+          avisos.push(`Limite de ${LIMITE_ANEXOS[type]} arquivo(s) desse tipo por mensagem.`);
+          break;
+        }
+        const totalBytes = attachedFiles.reduce((s, f) => s + (f.file?.size || 0), 0) + file.size;
+        if (totalBytes > LIMITE_TOTAL_ANEXOS_MB * 1024 * 1024) {
+          avisos.push(`"${file.name}" ultrapassa o limite total de ${LIMITE_TOTAL_ANEXOS_MB} MB de anexos.`);
+          continue;
+        }
         const dataUrl = await fileToBase64(file);
         attachedFiles.push({ file, type, dataUrl, name: file.name });
       }
-      event.target.value = '';
+      if (avisos.length > 0) alert(avisos.join('\n'));
       updatePreviewBar();
-      attachBtn.classList.add('active-glow');
+      if (attachedFiles.length > 0) attachBtn.classList.add('active-glow');
     }
 
     fileInputImage.onchange = (e) => handleFileSelect(e, 'image');
@@ -2654,12 +2727,12 @@
         previewItem.className = 'preview-item';
         if (item.type === 'image') {
           previewItem.innerHTML = `
-            <img src="${item.dataUrl}" alt="${item.name}" />
+            <img src="${escapeHtml(item.dataUrl)}" alt="${escapeHtml(item.name)}" />
             <button class="preview-remove" onclick="removeAttachment(${index})">×</button>
           `;
         } else if (item.type === 'video') {
           previewItem.innerHTML = `
-            <video src="${item.dataUrl}"></video>
+            <video src="${escapeHtml(item.dataUrl)}"></video>
             <div style="position:absolute;bottom:2px;left:4px;font-size:10px;color:#fff;">🎥</div>
             <button class="preview-remove" onclick="removeAttachment(${index})">×</button>
           `;
@@ -2683,16 +2756,17 @@
       if (!texto && attachedFiles.length === 0) return;
       unlockDeviceAudio();
 
-      let userHtml = texto ? `<div>${texto}</div>` : '';
+      let userHtml = texto ? `<div>${escapeHtml(texto)}</div>` : '';
       if (attachedFiles.length > 0) {
         userHtml += '<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">';
         attachedFiles.forEach(f => {
+          const src = escapeHtml(f.dataUrl);
           if (f.type === 'image') {
-            userHtml += `<img src="${f.dataUrl}" class="chat-img-thumb" alt="${f.name}" />`;
+            userHtml += `<img src="${src}" class="chat-img-thumb" alt="${escapeHtml(f.name)}" />`;
           } else if (f.type === 'video') {
-            userHtml += `<video src="${f.dataUrl}" controls class="chat-img-thumb"></video>`;
+            userHtml += `<video src="${src}" controls class="chat-img-thumb"></video>`;
           } else {
-            userHtml += `<audio src="${f.dataUrl}" controls style="margin-top:6px;max-width:240px;"></audio>`;
+            userHtml += `<audio src="${src}" controls style="margin-top:6px;max-width:240px;"></audio>`;
           }
         });
         userHtml += '</div>';
@@ -2703,6 +2777,8 @@
       sendBtn.disabled = true;
 
       const mediaPayload = attachedFiles.map(f => f.dataUrl);
+      // No histórico guarda só tipo e nome: data URLs em base64 estouram o limite de ~5 MB do localStorage
+      const mediaHistorico = attachedFiles.map(f => ({ tipo: f.type, nome: f.name }));
       attachedFiles = [];
       updatePreviewBar();
 
@@ -2726,7 +2802,7 @@
         activeConv.messages.push({
           role: 'user',
           text: texto,
-          media: mediaPayload
+          media: mediaHistorico
         });
         saveStoredConversations(convs);
         renderHistorySidebar();
@@ -2741,7 +2817,7 @@
           <div class="typing-dot"></div>
           <div class="typing-dot"></div>
           <div class="typing-dot"></div>
-          <span style="font-size:13.5px;color:var(--text-muted);margin-left:6px;">Consultando base vetorial e gerando resposta com <strong>${selectedModelName}</strong>...</span>
+          <span style="font-size:13.5px;color:var(--text-muted);margin-left:6px;">Consultando base vetorial e gerando resposta com <strong>${escapeHtml(selectedModelName)}</strong>...</span>
         </div>
       `, selectedModelName, false);
 
@@ -2760,8 +2836,11 @@
         });
 
         if (!res.ok) {
+          // O servidor responde validações (anexo não suportado, limite de requisições, corpo grande) em JSON { erro }
           const errText = await res.text();
-          throw new Error(errText || `Erro HTTP ${res.status}`);
+          let errMsg = errText;
+          try { errMsg = JSON.parse(errText).erro || errText; } catch (e) {}
+          throw new Error(errMsg || `Erro HTTP ${res.status}`);
         }
 
         const reader = res.body.getReader();
@@ -2815,10 +2894,16 @@
               } catch (e) {}
             } else if (eventType === 'usage') {
               try {
-                const { contexto } = JSON.parse(dataStr);
+                const { contexto, metricas } = JSON.parse(dataStr);
                 if (contexto) {
                   atualizarBarraContexto(contexto);
                   if (lastMetrics) lastMetrics.contexto = contexto;
+                }
+                // Tempo do LLM só é conhecido no fim do streaming
+                if (metricas && metricas.tempoLLMMs != null) {
+                  if (lastMetrics) Object.assign(lastMetrics, metricas);
+                  const elTempoLLM = document.getElementById('tempoLLM');
+                  if (elTempoLLM) elTempoLLM.innerText = `${metricas.tempoLLMMs} ms`;
                 }
               } catch (e) {}
             } else if (eventType === 'token') {
@@ -2830,20 +2915,20 @@
                     loadingMsg.innerHTML = '';
                   }
                   rawResponse += token;
-                  loadingMsg.innerHTML = marked.parse(rawResponse);
+                  loadingMsg.innerHTML = renderMarkdown(rawResponse);
                 }
               } catch (e) {}
             } else if (eventType === 'error') {
               try {
                 const errData = JSON.parse(dataStr);
                 rawResponse += `\n⚠️ **Erro:** ${errData.erro || 'Falha no processamento.'}`;
-                loadingMsg.innerHTML = marked.parse(rawResponse);
+                loadingMsg.innerHTML = renderMarkdown(rawResponse);
               } catch (e) {}
             }
           }
         }
 
-        const finalHtml = marked.parse(rawResponse || 'Nenhuma resposta gerada.');
+        const finalHtml = renderMarkdown(rawResponse || 'Nenhuma resposta gerada.');
         loadingMsg.innerHTML = finalHtml;
         loadingMsg.dataset.rawText = rawResponse;
 
@@ -2883,7 +2968,7 @@
           );
         }
       } catch (err) {
-        loadingMsg.innerHTML = `⚠️ <strong>Erro ao conectar com o servidor vetorial:</strong> ${err.message}`;
+        loadingMsg.innerHTML = `⚠️ <strong>Erro ao conectar com o servidor vetorial:</strong> ${escapeHtml(err.message)}`;
       } finally {
         sendBtn.disabled = false;
         promptInput.focus();

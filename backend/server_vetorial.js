@@ -25,11 +25,6 @@ if (process.env.TRUST_PROXY) {
     app.set('trust proxy', 1);
 }
 
-// Tamanho máximo do corpo: comporta imagens/vídeos curtos em base64 sem aceitar uploads arbitrários
-const BODY_LIMIT = process.env.BODY_LIMIT || '25mb';
-app.use(express.json({ limit: BODY_LIMIT }));
-app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
-
 // CORS: lista de origens em CORS_ORIGINS (separadas por vírgula). Sem a variável, aceita qualquer origem (modo laboratório).
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 if (CORS_ORIGINS.length > 0) {
@@ -66,6 +61,12 @@ function limitarRequisicoes(req, res, next) {
     next();
 }
 app.use(['/search', '/chat', '/tts'], limitarRequisicoes); // '/chat' também cobre '/chat/stream'
+
+// Tamanho máximo do corpo: comporta imagens/vídeos curtos em base64 sem aceitar uploads arbitrários.
+// Registrado depois do limite de requisições, para não processar corpos grandes de quem já excedeu a cota.
+const BODY_LIMIT = process.env.BODY_LIMIT || '25mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
 
 // Validação de entrada compartilhada pelas rotas
 const TOPK_MAX = 20;
@@ -282,9 +283,11 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
                 }
             ],
             temperature: 0.1,
-            max_tokens: 60
+            // gpt-oss é um modelo de raciocínio: com 60 tokens o raciocínio consumia tudo e a resposta vinha vazia
+            max_tokens: 300,
+            ...(String(process.env.GROQ_MODEL || "openai/gpt-oss-120b").includes("gpt-oss") ? { reasoning_effort: "low" } : {})
         });
-        const queryReescrita = recontextCompletion.choices[0]?.message?.content?.trim();
+        const queryReescrita = recontextCompletion.choices[0]?.message?.content?.trim().split('\n')[0].trim();
         if (queryReescrita && queryReescrita.length > 3) {
             const nova = queryReescrita.replace(/^["']|["']$/g, '');
             console.log(`🔄 Query Recontextualizada: "${mensagem}" ➔ "${nova}"`);
@@ -465,42 +468,7 @@ app.post('/chat', async (req, res) => {
                 || "Sem resposta do GPT-OSS-20B.";
             modeloIdentificado = `GPT-OSS-20B (NVIDIA • ${gptOssModel})`;
 
-        } else if (modelo === 'gpt-oss-120b' || modelo === 'gpt-oss-120b-nvidia' || modelo === 'nvidia-gpt-oss-120b') {
-            const gptOss120ApiKey = process.env.GPT_OSS_120B_API_KEY || process.env.NVIDIA_API_KEY;
-            const gptOss120Model = process.env.GPT_OSS_120B_MODEL || "openai/gpt-oss-120b";
-
-            if (!gptOss120ApiKey) {
-                return res.status(400).json({ resposta: "❌ GPT_OSS_120B_API_KEY não configurada no arquivo .env." });
-            }
-
-            try {
-                const gptOss120Res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${gptOss120ApiKey}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        model: gptOss120Model,
-                        messages: messagesPayload,
-                        temperature: 1,
-                        top_p: 1,
-                        max_tokens: 4096
-                    })
-                });
-                const gptOss120Data = await gptOss120Res.json();
-                if (!gptOss120Res.ok) {
-                    respostaTexto = `⚠️ **Erro da API NVIDIA (${gptOss120Res.status}):** ${gptOss120Data.detail || gptOss120Data.error?.message || JSON.stringify(gptOss120Data)}.`;
-                } else {
-                    respostaTexto = gptOss120Data?.choices?.[0]?.message?.content
-                        || gptOss120Data?.choices?.[0]?.message?.reasoning_content
-                        || "Sem resposta do GPT-OSS-120B (NVIDIA).";
-                }
-            } catch (err) {
-                respostaTexto = `⚠️ Erro ao conectar com o endpoint da NVIDIA para o modelo ${gptOss120Model}: ${err.message}`;
-            }
-            modeloIdentificado = `GPT-OSS-120B (NVIDIA • 120B Reasoning)`;
-
+        // "gpt-oss-120b" não tem bloco próprio: o modelo saiu da NVIDIA em 03/09/2026 (HTTP 410) e cai no Groq (else final), como no /chat/stream.
         } else if (modelo === 'nemotron-3-super-120b' || modelo === 'nemotron-120b' || modelo === 'nemotron' || modelo === 'nemotron-3-ultra-550b') {
             const nemotron120ApiKey = process.env.NVIDIA_NEMOTRON_120B_API_KEY || process.env.NVIDIA_API_KEY;
             const nemotron120Model = process.env.NEMOTRON_120B_MODEL || "nvidia/nemotron-3.5-super-vl-120b-a12b";
@@ -777,7 +745,6 @@ app.post('/chat/stream', async (req, res) => {
         else if (modelo === 'nemotron-3-nano-omni') modeloDisplay = "Nemotron 3 Nano Omni 30B (NVIDIA • Multimodal)";
         else if (modelo === 'nemotron-3-super-120b') modeloDisplay = "Nemotron 3.5 Super VL 120B (NVIDIA)";
         else if (modelo === 'gpt-oss-20b') modeloDisplay = "GPT-OSS 20B (NVIDIA)";
-        else if (modelo === 'gpt-oss-120b' || modelo === 'gpt-oss-120b-nvidia' || modelo === 'nvidia-gpt-oss-120b') modeloDisplay = "GPT-OSS 120B (NVIDIA)";
         else if (modelo === 'phi-3-mini') modeloDisplay = "Phi-3-mini (Local Ollama)";
         else if (modelo === 'gemma-2-2b') modeloDisplay = "Gemma 2 2B (Local Ollama)";
 
@@ -821,8 +788,8 @@ app.post('/chat/stream', async (req, res) => {
 
         const inicioLLM = Date.now();
 
-        // Stream via Groq (Padrão e Mais Rápido). "gpt-oss-120b" é a versão NVIDIA e segue para o bloco OpenAI-compatível abaixo.
-        if (modelo === 'groq') {
+        // Stream via Groq (Padrão e Mais Rápido). O GPT-OSS 120B saiu da NVIDIA em 03/09/2026 (HTTP 410), então também roda no Groq.
+        if (modelo === 'groq' || modelo === 'gpt-oss-120b' || modelo === 'gpt-oss-120b-nvidia' || modelo === 'nvidia-gpt-oss-120b') {
             const stream = await groq.chat.completions.create({
                 messages: messagesPayload,
                 model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
@@ -842,7 +809,8 @@ app.post('/chat/stream', async (req, res) => {
         } else if (modelo === 'gemini') {
             const geminiApiKey = process.env.GEMINI_API_KEY;
             const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${geminiApiKey}`;
+            // Chave no cabeçalho (não na URL) para não aparecer em logs de proxy
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse`;
 
             const geminiContents = [];
             for (const m of messagesPayload.filter(m => m.role !== 'system')) {
@@ -852,17 +820,19 @@ app.post('/chat/stream', async (req, res) => {
                 });
             }
 
-            const geminiRes = await fetch(url, {
+            const geminiRes = geminiApiKey ? await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiApiKey },
                 body: JSON.stringify({
                     system_instruction: { parts: [{ text: systemPrompt }] },
                     contents: geminiContents,
                     generationConfig: { temperature: 0.6, maxOutputTokens: 4096 }
                 })
-            });
+            }) : null;
 
-            if (!geminiRes.ok) {
+            if (!geminiRes) {
+                res.write(`event: error\ndata: ${JSON.stringify({ erro: "GEMINI_API_KEY não configurada no arquivo .env." })}\n\n`);
+            } else if (!geminiRes.ok) {
                 const errText = await geminiRes.text();
                 res.write(`event: error\ndata: ${JSON.stringify({ erro: errText })}\n\n`);
             } else {
@@ -924,6 +894,12 @@ app.post('/chat/stream', async (req, res) => {
                 } else {
                     modelName = process.env.QWEN_MODEL || "qwen2.5:1.5b"; // Padrão selecionado
                 }
+            }
+
+            if (!apiKey) {
+                res.write(`event: error\ndata: ${JSON.stringify({ erro: `Chave de API da NVIDIA não configurada no .env para o modelo ${modelName}.` })}\n\n`);
+                res.write('event: done\ndata: [DONE]\n\n');
+                return res.end();
             }
 
             const streamBody = {
@@ -993,13 +969,17 @@ app.post('/chat/stream', async (req, res) => {
         const complT = streamUsage?.completion_tokens || estimarTokens(streamText);
         const totalT = promptT + complT;
         const finalContexto = { ...calcularUsoContexto(totalT, maxCtx), estimado: !streamUsage, truncado: totalT > maxCtx };
-        res.write(`event: usage\ndata: ${JSON.stringify({ usage: { prompt_tokens: promptT, completion_tokens: complT, total_tokens: totalT }, contexto: finalContexto })}\n\n`);
+        const metricasFinais = { tempoLLMMs: Date.now() - inicioLLM, tempoTotalMs: Date.now() - inicioTotal };
+        res.write(`event: usage\ndata: ${JSON.stringify({ usage: { prompt_tokens: promptT, completion_tokens: complT, total_tokens: totalT }, contexto: finalContexto, metricas: metricasFinais })}\n\n`);
 
         res.write('event: done\ndata: [DONE]\n\n');
         res.end();
 
     } catch (error) {
         console.error("Erro no SSE Streaming:", error);
+        if (!res.headersSent) {
+            return res.status(500).json({ erro: error.message });
+        }
         res.write(`event: error\ndata: ${JSON.stringify({ erro: error.message })}\n\n`);
         res.end();
     }
@@ -1121,10 +1101,10 @@ async function sintetizarInteractionsTTS(apiKey, model, textoLimpo, voiceName) {
 }
 
 async function sintetizarGemini25TTS(apiKey, textoLimpo, voiceName) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
     const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({
             contents: [{ parts: [{ text: `Fale em português do Brasil de forma natural e clara: ${textoLimpo}` }] }],
             generationConfig: {
@@ -1148,9 +1128,12 @@ async function sintetizarGemini25TTS(apiKey, textoLimpo, voiceName) {
 // 7. Síntese de Voz com Gemini TTS (Multi-modelo com fallback para não estourar cota)
 app.post('/tts', async (req, res) => {
     try {
-        const { texto, voz = "pt-br-assistant-5" } = req.body;
-        if (!texto) {
+        const { texto, voz = "pt-br-assistant-5" } = req.body || {};
+        if (!texto || typeof texto !== 'string') {
             return res.status(400).json({ erro: "Texto obrigatório para síntese de voz." });
+        }
+        if (texto.length > 20000) {
+            return res.status(413).json({ erro: "Texto longo demais para síntese de voz (máx. 20.000 caracteres)." });
         }
 
         const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -1204,12 +1187,29 @@ app.post('/tts', async (req, res) => {
     }
 });
 
+// Erros de parsing do corpo (JSON inválido, corpo acima de BODY_LIMIT) respondem em JSON
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = err.status || err.statusCode || 500;
+    if (status === 413) {
+        return res.status(413).json({ erro: `Requisição maior que o limite de ${BODY_LIMIT}. Envie arquivos menores.` });
+    }
+    if (status === 400 && err.type === 'entity.parse.failed') {
+        return res.status(400).json({ erro: "JSON inválido no corpo da requisição." });
+    }
+    console.error("Erro não tratado na rota:", err);
+    res.status(status).json({ erro: status === 500 ? "Erro interno do servidor." : err.message });
+});
+
+// Depois de uma exceção não capturada o processo pode ficar em estado inconsistente:
+// registra e encerra, para o gerenciador (Render, pm2, nodemon) reiniciar limpo.
 process.on('uncaughtException', (err) => {
-    console.error("⚠️ [UncaughtException capturado no server_vetorial]:", err.message);
+    console.error("⚠️ [UncaughtException no server_vetorial] Encerrando processo:", err);
+    process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
-    console.error("⚠️ [UnhandledRejection capturado no server_vetorial]:", reason);
+    console.error("⚠️ [UnhandledRejection no server_vetorial]:", reason);
 });
 
 app.listen(PORT, () => {
