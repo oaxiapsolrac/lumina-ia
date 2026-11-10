@@ -4,17 +4,79 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import Groq from 'groq-sdk';
 import { vectorEngine } from './vector_engine.js';
+import { coletarAnexos, montarPartesMidia } from './anexos.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(cors());
+
+// --- Proteções de acesso (o servidor chama APIs pagas com as chaves do .env) ---
+
+// Atrás de proxy (Render etc.), usa o IP real do cliente no limite de requisições
+if (process.env.TRUST_PROXY) {
+    const v = process.env.TRUST_PROXY;
+    app.set('trust proxy', /^\d+$/.test(v) ? Number(v) : v);
+} else if (process.env.RENDER) {
+    app.set('trust proxy', 1);
+}
+
+// Tamanho máximo do corpo: comporta imagens/vídeos curtos em base64 sem aceitar uploads arbitrários
+const BODY_LIMIT = process.env.BODY_LIMIT || '25mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
+
+// CORS: lista de origens em CORS_ORIGINS (separadas por vírgula). Sem a variável, aceita qualquer origem (modo laboratório).
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+if (CORS_ORIGINS.length > 0) {
+    app.use(cors({ origin: CORS_ORIGINS }));
+} else {
+    console.warn("⚠️ AVISO: CORS_ORIGINS não definido; qualquer site pode chamar este servidor. Defina-o antes de publicar.");
+    app.use(cors());
+}
+
+// Limite de requisições por IP em janela fixa (em memória; suficiente para uma instância única)
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? '30', 10);
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10);
+const contadoresPorIp = new Map();
+setInterval(() => {
+    const agora = Date.now();
+    for (const [ip, c] of contadoresPorIp) if (c.reinicioEm <= agora) contadoresPorIp.delete(ip);
+}, RATE_LIMIT_WINDOW_MS).unref();
+
+function limitarRequisicoes(req, res, next) {
+    if (!RATE_LIMIT_MAX || RATE_LIMIT_MAX <= 0) return next();
+    const agora = Date.now();
+    const ip = req.ip || req.socket?.remoteAddress || 'desconhecido';
+    let c = contadoresPorIp.get(ip);
+    if (!c || c.reinicioEm <= agora) {
+        c = { total: 0, reinicioEm: agora + RATE_LIMIT_WINDOW_MS };
+        contadoresPorIp.set(ip, c);
+    }
+    c.total++;
+    if (c.total > RATE_LIMIT_MAX) {
+        const segundos = Math.ceil((c.reinicioEm - agora) / 1000);
+        res.setHeader('Retry-After', String(segundos));
+        return res.status(429).json({ erro: `Muitas requisições. Tente novamente em ${segundos}s.` });
+    }
+    next();
+}
+app.use(['/search', '/chat', '/tts'], limitarRequisicoes); // '/chat' também cobre '/chat/stream'
+
+// Validação de entrada compartilhada pelas rotas
+const TOPK_MAX = 20;
+function lerTopK(valor, padrao) {
+    const n = parseInt(valor, 10);
+    if (!Number.isFinite(n) || n < 1) return padrao;
+    return Math.min(n, TOPK_MAX);
+}
+function lerPais(valor) {
+    return typeof valor === 'string' && valor.trim() ? valor.trim().slice(0, 60) : null;
+}
 
 const PORT = process.env.PORT || process.env.PORT_TESTE || 3001;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -34,7 +96,7 @@ function janelaContexto(modelo) {
     if (m === 'gemma-2-2b') return 8192;
     if (m === 'gemini') return 1048576;           // Gemini 2.5 Flash: 1M tokens
     if (m.includes('mistral')) return 1048576;    // Mistral Large 4: 1M tokens
-    if (m.startsWith('glm') || m.startsWith('kimi') || m === 'nvidia') return 131072; // GLM 5.3 Flash: 128K
+    if (m.startsWith('minimax') || m.startsWith('glm') || m.startsWith('kimi') || m === 'nvidia') return 131072; // MiniMax M3.1 Flash (NIM)
     if (m.startsWith('nemotron')) return 131072;  // Nemotron: 128K
     if (m.startsWith('gpt-oss')) return 131072;   // GPT-OSS 20B/120B: 128K
     return 131072;                                // Groq (gpt-oss-120b): 128K
@@ -303,28 +365,32 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
             respostaTexto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta do Gemini.";
             modeloIdentificado = `Google Gemini (${geminiModel})`;
 
-        } else if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
+        } else if (modelo === 'minimax-m3.1-flash' || modelo === 'minimax' || modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
             const nvidiaApiKey = process.env.NVIDIA_API_KEY;
-            const nvidiaModel = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
+            const nvidiaModel = process.env.NVIDIA_MODEL || "minimaxai/minimax-m3.1-flash";
 
             if (!nvidiaApiKey) {
                 return res.status(400).json({ resposta: "❌ NVIDIA_API_KEY não configurada no arquivo .env." });
             }
 
             try {
+                const nvidiaBody = {
+                    model: nvidiaModel,
+                    messages: messagesPayload,
+                    temperature: 0.5,
+                    top_p: 1,
+                    max_tokens: 4096
+                };
+                if (nvidiaModel.includes("minimax")) {
+                    nvidiaBody.reasoning_effort = process.env.NVIDIA_REASONING_EFFORT || "low";
+                }
                 const nvidiaRes = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${nvidiaApiKey}`,
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({
-                        model: nvidiaModel,
-                        messages: messagesPayload,
-                        temperature: 0.5,
-                        top_p: 1,
-                        max_tokens: 1024
-                    }),
+                    body: JSON.stringify(nvidiaBody),
                     signal: AbortSignal.timeout(45000)
                 });
                 const nvidiaData = await nvidiaRes.json();
@@ -333,14 +399,14 @@ Conversa: "User: Quem é Sonia Guimarães? Assistant: Professora do ITA..." | No
                 } else {
                     respostaTexto = nvidiaData?.choices?.[0]?.message?.content
                         || nvidiaData?.choices?.[0]?.message?.reasoning_content
-                        || "Sem resposta do GLM 5.3 Flash.";
+                        || "Sem resposta do MiniMax M3.1 Flash.";
                     req.tokensIn = nvidiaData?.usage?.prompt_tokens || 0;
                     req.tokensOut = nvidiaData?.usage?.completion_tokens || 0;
                 }
             } catch (err) {
                 respostaTexto = `⚠️ Erro/timeout ao conectar ao endpoint da NVIDIA (${nvidiaModel}): ${err.message}`;
             }
-            modeloIdentificado = `GLM 5.3 Flash (NVIDIA • ${nvidiaModel})`;
+            modeloIdentificado = `MiniMax M3.1 Flash (NVIDIA • ${nvidiaModel})`;
 
         } else if (modelo === 'gpt-oss-20b' || modelo === 'gpt-oss') {
             const gptOssApiKey = process.env.GPT_OSS_API_KEY || process.env.NVIDIA_API_KEY;
@@ -668,7 +734,7 @@ app.post('/chat/stream', async (req, res) => {
         if (modelo === 'gemini') modeloDisplay = "Gemini 2.5 Flash (Google)";
         else if (modelo === 'qwen' || modelo === 'qwen2.5:1.5b' || modelo === 'local' || modelo === 'ic-qwen' || modelo === 'qwen-2.5-1.5b') modeloDisplay = "Qwen 2.5 1.5B (Local Ollama)";
         else if (modelo === 'mistral-large' || modelo === 'mistral' || modelo === 'mistral-large-4') modeloDisplay = "Mistral Large 4 (NVIDIA • 1T Multimodal)";
-        else if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') modeloDisplay = "GLM 5.3 Flash (NVIDIA • Z.ai)";
+        else if (modelo === 'minimax-m3.1-flash' || modelo === 'minimax' || modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') modeloDisplay = "MiniMax M3.1 Flash (NVIDIA)";
         else if (modelo === 'nemotron-3-nano-omni') modeloDisplay = "Nemotron 3 Nano Omni 30B (NVIDIA • Multimodal)";
         else if (modelo === 'nemotron-3-super-120b') modeloDisplay = "Nemotron 3.5 Super VL 120B (NVIDIA)";
         else if (modelo === 'gpt-oss-20b') modeloDisplay = "GPT-OSS 20B (NVIDIA)";
@@ -808,11 +874,11 @@ app.post('/chat/stream', async (req, res) => {
             // Demais modelos (NVIDIA NIM / Ollama) via OpenAI-compatible stream
             let apiUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
             let apiKey = process.env.NVIDIA_API_KEY;
-            let modelName = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
+            let modelName = process.env.NVIDIA_MODEL || "minimaxai/minimax-m3.1-flash";
 
-            if (modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
+            if (modelo === 'minimax-m3.1-flash' || modelo === 'minimax' || modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') {
                 apiKey = process.env.NVIDIA_API_KEY;
-                modelName = process.env.NVIDIA_MODEL || "z-ai/glm-5.3-flash";
+                modelName = process.env.NVIDIA_MODEL || "minimaxai/minimax-m3.1-flash";
             } else if (modelo === 'nemotron-3-nano-omni') {
                 apiKey = process.env.NVIDIA_NEMOTRON_OMNI_API_KEY || process.env.NVIDIA_API_KEY;
                 modelName = process.env.NEMOTRON_OMNI_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
@@ -841,16 +907,19 @@ app.post('/chat/stream', async (req, res) => {
             const streamBody = {
                 model: modelName,
                 messages: messagesPayload,
-                temperature: (modelName.includes("mistral") || modelName.includes("glm")) ? 0.5 : 0.6,
-                max_tokens: apiUrl.includes("nvidia.com") ? (modelName.includes("glm") ? 1024 : 4096) : 1536,
+                temperature: (modelName.includes("mistral") || modelName.includes("minimax") || modelName.includes("glm")) ? 0.5 : 0.6,
+                max_tokens: apiUrl.includes("nvidia.com") ? 4096 : 1536,
                 stream: true,
                 stream_options: { include_usage: true }
             };
-            if (modelName.includes("glm")) {
+            if (modelName.includes("minimax") || modelName.includes("glm")) {
                 streamBody.top_p = 1;
             }
             if (modelName.includes("mistral")) {
                 streamBody.reasoning_effort = process.env.MISTRAL_REASONING_EFFORT || "medium";
+            }
+            if (modelName.includes("minimax")) {
+                streamBody.reasoning_effort = process.env.NVIDIA_REASONING_EFFORT || "low";
             }
 
             const streamRes = await fetch(apiUrl, {
