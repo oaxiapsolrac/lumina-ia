@@ -100,17 +100,33 @@ function partesDoNome(nome) {
     return [...partes].filter((p) => p.trim().length >= 4);
 }
 
-// Pergunta que pede número ou estatística (português, espanhol e inglês; texto já sem acento)
-const PEDE_NUMERO = /\b(quant[oa]s?|cuant[oa]s?|porcent|percent|propor|taxa|tasa|numero|indice|indicador|estatistic|estadistic|dados?\b|participacao|participacion|representa|maioria|minoria|media|how many|share|rate)|%/;
+// Pergunta que pede número ou estatística (português, espanhol e inglês; texto já sem acento).
+// "Evolução"/"tendência" pedem série histórica: sem elas, "Como evoluíram as leis... no Paraguai desde 2013?"
+// deixava a série do índice WBL em 15º.
+const PEDE_NUMERO = /\b(quant[oa]s?|cuant[oa]s?|porcent|percent|propor|taxa|tasa|numero|indice|indicador|estatistic|estadistic|dados?\b|participacao|participacion|representa|maioria|minoria|media|how many|share|rate|evolu|tendencia|trend)|%/;
 // Categorias de indicadores numéricos (ontologia, Censo INEP, UNESCO UIS, RICYT/RedIndices). As categorias
 // "Estatística - Barreiras/Soluções/Diagnóstico" da base curada descrevem barreiras em texto e ficam de fora.
 const CATEGORIA_ESTATISTICA = /^(Indicator|Indicador\b)/i;
 // Medido no conjunto de avaliação com a base UNESCO/RICYT (77 perguntas): sem penalidade 73/77 no top-4,
-// com 0,1 ficaram 76/77 (financiamento de pesquisa na Argentina voltou de 17º para o top-4). 0 desliga.
+// com 0,1 ficaram 76/77 (financiamento de pesquisa na Argentina voltou de 17º para o top-4).
+// Com a base CEPALSTAT (+655 indicadores), 0,1 deixava 3 indicadores de participação política no lugar das
+// iniciativas em "Quais iniciativas e políticas... na Argentina?"; com 0,15 a busca fica em 75/77 e o PICT volta ao 1º. 0 desliga.
 const penalidadeEstatistica = () => {
     const bruto = process.env.BUSCA_PENALIDADE_ESTATISTICA;
     const v = Number(bruto);
-    return bruto !== undefined && String(bruto).trim() !== '' && Number.isFinite(v) && v >= 0 ? v : 0.1;
+    return bruto !== undefined && String(bruto).trim() !== '' && Number.isFinite(v) && v >= 0 ? v : 0.15;
+};
+
+// Pergunta que fala de mulheres ou gênero (texto já sem acento)
+const FALA_DE_GENERO = /\b(mulher|mulheres|genero|feminin\w*|meninas?|garotas?|maes?|gestantes?|maternidade|pesquisadoras|engenheiras|professoras|cientistas mulheres|investigadoras|ingenieras|mujer|mujeres|ninas?|madres?|women|woman|gender|girls?|female|mothers?)\b/;
+// Documentos que avisam não tratar de mulheres nem de gênero (políticas de carreira do STIP sem recorte de gênero,
+// indicadores da CEPALSTAT que não separam por sexo) perdem esta nota quando a pergunta fala de mulheres ou gênero.
+// Medido no conjunto de avaliação (77 perguntas) com as bases STIP e WBL: MRR 0,913 sem a penalidade (e sem a
+// diversificação por família), 0,915 com 0,15 e 0,921 com 0,25. 0 desliga.
+const penalidadeSemGenero = () => {
+    const bruto = process.env.BUSCA_PENALIDADE_SEM_GENERO;
+    const v = Number(bruto);
+    return bruto !== undefined && String(bruto).trim() !== '' && Number.isFinite(v) && v >= 0 ? v : 0.25;
 };
 
 // Países reconhecidos na pergunta (português, espanhol e inglês) → forma usada no campo "pais" dos documentos
@@ -118,8 +134,23 @@ const PAISES_NA_PERGUNTA = [
     ['brasil', 'brasil'], ['brazil', 'brasil'], ['peru', 'peru'], ['bolivia', 'bolivia'], ['mexico', 'mexico'],
     ['argentina', 'argentina'], ['chile', 'chile'], ['colombia', 'colombia'], ['equador', 'equador'], ['ecuador', 'equador'],
     ['costa rica', 'costa rica'], ['uruguai', 'uruguai'], ['uruguay', 'uruguai'], ['paraguai', 'paraguai'], ['paraguay', 'paraguai'],
-    ['el salvador', 'el salvador'], ['venezuela', 'venezuela'], ['guatemala', 'guatemala'], ['cuba', 'cuba'], ['panama', 'panama']
+    ['el salvador', 'el salvador'], ['venezuela', 'venezuela'], ['guatemala', 'guatemala'], ['cuba', 'cuba'], ['panama', 'panama'],
+    // Países que entraram com a base World Bank WBL
+    ['honduras', 'honduras'], ['nicaragua', 'nicaragua'], ['republica dominicana', 'republica dominicana'],
+    ['dominican republic', 'republica dominicana'], ['haiti', 'haiti']
 ];
+
+/**
+ * Família de um documento das bases tratadas: fonte + indicador, tema de debate ou tema.
+ * Cada iniciativa do STIP é a sua própria família (as partes 1, 2 e 3 do mesmo texto contam como uma só).
+ */
+function familiaDoDocumento(doc) {
+    const m = doc.metadados || {};
+    if (!m.source) return null;
+    if (m.document_type === 'iniciativa') return m.initiative_id ? `${m.source}:iniciativa:${m.initiative_id}` : null;
+    const tema = m.indicator_id ?? m.debate_theme_id ?? m.topic;
+    return tema === undefined || tema === null ? null : `${m.source}:${tema}`;
+}
 
 const chaveNome = (nome) => normalizar(nome).replace(/[^\p{L}\p{N}]+/gu, '');
 
@@ -228,7 +259,10 @@ class VectorEngine {
     /** Monta o índice BM25 com os mesmos documentos do índice vetorial (o nome entra duas vezes para pesar mais). */
     construirIndiceLexico() {
         this.partesNome = this.documents.map((d) => [...new Set([d.nome, ...(d.outrosNomes || [])].flatMap(partesDoNome))]);
-        this.indiceLexico = new IndiceBM25(this.documents.map((d) => `${d.nome} ${d.nome} ${d.texto}`));
+        // IDF por família: medido no conjunto de avaliação com CEPALSTAT, STIP e WBL, a busca foi de 73/77 (MRR 0,921)
+        // para 74/77 (MRR 0,923), e as perguntas novas sobre STIP e WBL de 22/23 para 23/23
+        this.indiceLexico = new IndiceBM25(this.documents.map((d) => `${d.nome} ${d.nome} ${d.texto}`),
+            { grupos: this.documents.map((d) => d.familia || null) });
     }
 
     async init() {
@@ -292,7 +326,7 @@ class VectorEngine {
         console.log("🔄 Reindexando a base vetorial...");
         const rawDocs = [];
         const seenKeys = new Set();
-        const resumo = { ontologia: 0, ruidoDescartado: 0, inep: 0, unescoRicyt: 0, soaas: 0, curado: 0, fontesAusentes: [] };
+        const resumo = { ontologia: 0, ruidoDescartado: 0, inep: 0, unescoRicyt: 0, cepalstat: 0, stip: 0, wbl: 0, soaas: 0, curado: 0, fontesAusentes: [] };
 
         // 1. Ontologia ELLAS (JSON gerado pelo ttl_parser.js, ou o próprio TTL se o JSON não existir)
         let docsTTL = [];
@@ -402,6 +436,64 @@ class VectorEngine {
             }
         } else {
             resumo.fontesAusentes.push('UNESCO/RICYT (base_unesco_ricyt.json)');
+        }
+
+        // 2c. Bases tratadas em ellas.ufmt/newdata/<fonte>/tratado, no mesmo formato da base UNESCO/RICYT:
+        //  - CEPALSTAT (CEPAL): indicadores de trabalho, renda, uso do tempo, competências digitais, liderança e marcos
+        //    legais para os 11 países do ELLAS e agregados da América Latina (tratar_cepalstat.py)
+        //  - OECD STIP Compass: políticas de CTI dos governos latino-americanos sobre mulheres e gênero e sobre
+        //    formação e carreira em CTI, e debates de política de 2025 (tratar_stip.py)
+        //  - World Bank WBL: leis, políticas e aplicação das leis sobre os direitos econômicos das mulheres em
+        //    19 países da América Latina, edição 2026 e série 1.0 desde 2013 (tratar_wbl.py)
+        // Cada documento diz a origem em dois lugares que vão para o modelo: o começo de "detalhes"
+        // ("Fonte: ...") e o campo "fonte", que vira a linha "- Fonte:" do contexto. Documento sem os dois é ignorado.
+        const BASES_TRATADAS = [
+            { arquivo: 'base_cepalstat.json', contador: 'cepalstat', rotulo: 'indicadores da CEPALSTAT (CEPAL)', origem: /^Fonte: CEPALSTAT/, semSeries: true },
+            { arquivo: 'base_stip.json', contador: 'stip', rotulo: 'políticas e debates do OECD STIP Compass', origem: /^Fonte: EC-OECD STIP Compass/, semSeries: false },
+            { arquivo: 'base_wbl.json', contador: 'wbl', rotulo: 'documentos do World Bank Women, Business and the Law', origem: /^Fonte: World Bank/, semSeries: false }
+        ];
+        for (const base of BASES_TRATADAS) {
+            const caminho = path.join(__dirname, base.arquivo);
+            if (!fs.existsSync(caminho)) {
+                resumo.fontesAusentes.push(`${base.rotulo} (${base.arquivo})`);
+                continue;
+            }
+            try {
+                const docsBase = JSON.parse(fs.readFileSync(caminho, 'utf-8'));
+                for (const doc of docsBase) {
+                    const key = `${doc.pais}-${doc.categoria}-${doc.nome}`.toLowerCase();
+                    if (seenKeys.has(key)) continue;
+                    if (!doc.fonte || !base.origem.test(doc.detalhes || '')) {
+                        console.warn(`⚠️ Documento sem origem ignorado (${base.arquivo}): ${doc.id}`);
+                        continue;
+                    }
+                    seenKeys.add(key);
+                    const outrosNomes = Array.isArray(doc.outrosNomes) && doc.outrosNomes.length ? doc.outrosNomes : null;
+                    rawDocs.push({
+                        id: doc.id,
+                        nome: doc.nome,
+                        outrosNomes,
+                        pais: doc.pais,
+                        categoria: doc.categoria,
+                        tipo: doc.tipo || doc.categoria,
+                        areas: doc.areas || null,
+                        objetivos: doc.objetivos || null,
+                        detalhes: doc.detalhes,
+                        fonte: doc.fonte,
+                        urlsFonte: Array.isArray(doc.urlsFonte) && doc.urlsFonte.length ? doc.urlsFonte : null,
+                        // Família: o mesmo indicador ou tema em vários países (ex.: licenças do WBL nos 19 países),
+                        // ou as partes de uma mesma iniciativa do STIP. Na busca sem país citado, entra só um documento de cada família.
+                        familia: familiaDoDocumento(doc),
+                        semGenero: doc.metadados?.topic === 'carreira_stem' || /não separa os dados por sexo/.test(doc.detalhes || ''),
+                        // "texto" já vem curto (sem séries anuais), como na base UNESCO/RICYT
+                        texto: `${base.semSeries ? semSeriesHistoricas(doc.texto) : doc.texto}${outrosNomes ? ` Outros nomes: ${outrosNomes.join('; ')}` : ''}`
+                    });
+                    resumo[base.contador]++;
+                }
+                console.log(`✅ ${resumo[base.contador]} ${base.rotulo} integrados.`);
+            } catch (e) {
+                console.warn(`⚠️ Aviso ao carregar ${base.arquivo}:`, e.message);
+            }
         }
 
         // 3. Ingestão de Conhecimento Semântico do SOAAS
@@ -590,6 +682,7 @@ class VectorEngine {
         // Pergunta que não pede número ("O que a Argentina faz...", "Quais iniciativas..."): os documentos
         // estatísticos perdem um pouco de nota, para não ocuparem o lugar de políticas e iniciativas
         const penalizarEstatisticas = !PEDE_NUMERO.test(normalizar(query));
+        const perguntaDeGenero = FALA_DE_GENERO.test(normalizar(query));
         // País citado na pergunta (sem filtro de país): bônus para documentos daquele país
         const paisesCitados = pais ? [] : [...new Set(PAISES_NA_PERGUNTA.filter(([forma]) => consultaPalavras.includes(` ${forma} `)).map(([, p]) => p))];
 
@@ -601,7 +694,8 @@ class VectorEngine {
             const lexicoNorm = maxLexico > 0 ? lexico[i] / maxLexico : 0;
             const paisDoc = paisesCitados.length ? normalizar(doc.pais) : '';
             const bonusPais = paisesCitados.some((p) => paisDoc.includes(p)) ? BONUS_PAIS : 0;
-            const penalidade = penalizarEstatisticas && CATEGORIA_ESTATISTICA.test(doc.categoria || '') ? penalidadeEstatistica() : 0;
+            const penalidade = (penalizarEstatisticas && CATEGORIA_ESTATISTICA.test(doc.categoria || '') ? penalidadeEstatistica() : 0)
+                + (perguntaDeGenero && doc.semGenero ? penalidadeSemGenero() : 0);
             const score = semantico + peso * lexicoNorm + (citadas.has(i) ? BONUS_NOME : 0) + bonusPais - penalidade;
             if (score >= minScore) scored.push({ doc, score, semantico });
         }
@@ -610,10 +704,16 @@ class VectorEngine {
         // Top-K sem repetições: mesmo nome (com/sem acento) ou vetor praticamente idêntico a um já escolhido
         const escolhidos = [];
         const nomesVistos = new Set();
+        // Sem país na pergunta (nem filtro), um documento por família: senão as 19 versões nacionais do mesmo tema
+        // do WBL ocupavam todo o top-4 de "Como o assédio afeta as estudantes de exatas?"
+        const umPorFamilia = !pais && paisesCitados.length === 0;
+        const familiasVistas = new Set();
         for (const item of scored) {
             if (escolhidos.length >= topK) break;
             const chave = chaveNome(item.doc.nome);
             if (nomesVistos.has(chave)) continue;
+            if (umPorFamilia && item.doc.familia && familiasVistas.has(item.doc.familia)) continue;
+            if (item.doc.familia) familiasVistas.add(item.doc.familia);
             if (escolhidos.some((e) => produtoEscalar(e.doc.vetor, item.doc.vetor) > LIMIAR_DUPLICADO)) continue;
             nomesVistos.add(chave);
             escolhidos.push(item);

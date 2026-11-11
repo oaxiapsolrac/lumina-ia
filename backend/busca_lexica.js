@@ -21,22 +21,36 @@ export function tokenizar(texto) {
 }
 
 export class IndiceBM25 {
-    /** @param {string[]} textos um texto por documento, na mesma ordem do índice vetorial */
-    constructor(textos, { k1 = 1.2, b = 0.75 } = {}) {
+    /**
+     * @param {string[]} textos um texto por documento, na mesma ordem do índice vetorial
+     * @param {(string|null)[]} [grupos] família de cada documento (null = sem família). No IDF, cada família conta
+     *   como um documento só: as 19 versões nacionais do mesmo tema do WBL (ou do mesmo indicador da CEPALSTAT)
+     *   não tiram o peso de palavras como "assédio" dos documentos que tratam do assunto de outro jeito.
+     */
+    constructor(textos, { k1 = 1.2, b = 0.75, grupos = null } = {}) {
         this.k1 = k1;
         this.b = b;
         this.freqs = [];
         this.tamanhos = [];
         this.df = new Map();
-        for (const texto of textos) {
+        const vistos = new Map(); // termo → grupos já contados
+        textos.forEach((texto, i) => {
             const tokens = tokenizar(texto);
             const tf = new Map();
             for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);
             this.freqs.push(tf);
             this.tamanhos.push(tokens.length);
-            for (const t of tf.keys()) this.df.set(t, (this.df.get(t) || 0) + 1);
-        }
+            const grupo = grupos?.[i] ?? `#${i}`;
+            for (const t of tf.keys()) {
+                let g = vistos.get(t);
+                if (!g) vistos.set(t, (g = new Set()));
+                if (g.has(grupo)) continue;
+                g.add(grupo);
+                this.df.set(t, (this.df.get(t) || 0) + 1);
+            }
+        });
         this.n = textos.length;
+        this.nIdf = grupos ? new Set(textos.map((_, i) => grupos[i] ?? `#${i}`)).size : textos.length;
         this.tamanhoMedio = this.tamanhos.reduce((s, x) => s + x, 0) / Math.max(1, this.n);
     }
 
@@ -45,7 +59,7 @@ export class IndiceBM25 {
         const termos = [...new Set(tokenizar(consulta))].filter((t) => this.df.has(t));
         const pontos = new Float64Array(this.n);
         if (termos.length === 0) return pontos;
-        const idf = termos.map((t) => Math.log(1 + (this.n - this.df.get(t) + 0.5) / (this.df.get(t) + 0.5)));
+        const idf = termos.map((t) => Math.log(1 + (this.nIdf - this.df.get(t) + 0.5) / (this.df.get(t) + 0.5)));
         for (let i = 0; i < this.n; i++) {
             const tf = this.freqs[i];
             const norma = this.k1 * (1 - this.b + (this.b * this.tamanhos[i]) / this.tamanhoMedio);
