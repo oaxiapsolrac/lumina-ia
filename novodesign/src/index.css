@@ -1,0 +1,234 @@
+@import "tailwindcss";
+
+/* Tema controlado por data-theme no <html> (claro/escuro), com padrão do sistema */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Paleta ELLAS e tokens semânticos.
+   Contraste verificado (WCAG AA): texto secundário ≥ 7:1 e anel de foco ≥ 3:1 nos dois temas. */
+:root,
+[data-theme='light'] {
+  --app: #f6f5f8;
+  --surface: #ffffff;
+  --surface-2: #efedf3;
+  --surface-3: #e5e2ec;
+  --fg: #1c1a21;
+  --muted: #5a5665;
+  --line: #dedae6;
+  --accent-text: #a63d58;
+  --ring: #a63d58;
+  --user-bubble: #ece8f3;
+  --code-bg: #f1eff5;
+  --shadow-composer: 0 10px 40px -12px rgb(60 40 80 / 0.25);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --app: #0e0e11;
+  --surface: #17171b;
+  --surface-2: #212127;
+  --surface-3: #2b2b33;
+  --fg: #ececf1;
+  --muted: #a9a7b3;
+  --line: #2d2d35;
+  --accent-text: #f58b98;
+  --ring: #f67280;
+  --user-bubble: #26252d;
+  --code-bg: #121216;
+  --shadow-composer: 0 12px 48px -12px rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Lora", Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent-text);
+  --color-ring: var(--ring);
+  --color-user-bubble: var(--user-bubble);
+  --color-code: var(--code-bg);
+
+  --color-plum: #6c567b;
+  --color-mauve: #c06c84;
+  --color-coral: #f67280;
+  --color-teal: #355c7d;
+  /* Versão escura do gradiente para botões com ícone branco (contraste ≥ 3:1) */
+  --color-brand-1: #6c567b;
+  --color-brand-2: #a9557a;
+  --color-brand-3: #d0566b;
+}
+
+@theme {
+  --animate-aurora: aurora 18s ease-in-out infinite alternate;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-blink: blink 1.4s ease-in-out infinite;
+  --animate-surgir: surgir 0.16s ease-out;
+  --animate-entrar-direita: entrar-direita 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-entrar-esquerda: entrar-esquerda 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-escurecer: escurecer 0.2s ease-out;
+
+  @keyframes surgir {
+    from { opacity: 0; transform: translateY(4px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes entrar-direita {
+    from { transform: translateX(100%); }
+    to { transform: none; }
+  }
+  @keyframes entrar-esquerda {
+    from { transform: translateX(-100%); }
+    to { transform: none; }
+  }
+  @keyframes escurecer {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes aurora {
+    0% { transform: translate3d(-8%, -6%, 0) scale(1); }
+    50% { transform: translate3d(6%, 4%, 0) scale(1.15); }
+    100% { transform: translate3d(-4%, 8%, 0) scale(0.95); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.25; transform: scale(0.7); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--app);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Foco sempre visível para navegação por teclado */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-coral) 35%, transparent);
+  }
+  /* Rolagem discreta */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
+  }
+}
+
+@layer utilities {
+  .texto-gradiente {
+    background-image: linear-gradient(100deg, #6c567b 0%, #c06c84 45%, #f67280 70%, #6c567b 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .texto-pensando {
+    background-image: linear-gradient(90deg, var(--muted) 0%, var(--fg) 50%, var(--muted) 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Respeita quem pediu menos movimento no sistema operacional */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Conteúdo em Markdown das respostas */
+.prosa {
+  font-size: 1rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.prosa > * + * {
+  margin-top: 0.85em;
+}
+.prosa h1,
+.prosa h2,
+.prosa h3,
+.prosa h4 {
+  font-weight: 650;
+  line-height: 1.3;
+  margin-top: 1.4em;
+}
+.prosa h1 { font-size: 1.35rem; }
+.prosa h2 { font-size: 1.2rem; }
+.prosa h3 { font-size: 1.08rem; }
+.prosa strong { font-weight: 650; }
+.prosa a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prosa ul,
+.prosa ol {
+  padding-left: 1.4em;
+}
+.prosa ul { list-style: disc; }
+.prosa ol { list-style: decimal; }
+.prosa li + li { margin-top: 0.35em; }
+.prosa li::marker { color: var(--muted); }
+.prosa blockquote {
+  border-left: 3px solid var(--color-mauve);
+  padding-left: 1em;
+  color: var(--muted);
+}
+.prosa :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+}
+.prosa table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.prosa th,
+.prosa td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.55em 0.8em;
+  text-align: left;
+  vertical-align: top;
+}
+.prosa th {
+  font-weight: 600;
+  background: var(--surface-2);
+}
+.prosa hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
