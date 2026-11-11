@@ -1,8 +1,8 @@
 import type { Conversa, Documento, Mensagem, Metricas, MidiaSalva, VerificacaoNumeros } from './types';
 
 /**
- * Usa a mesma chave e o mesmo formato do index.html antigo, para que as duas versões
- * leiam o histórico uma da outra quando estiverem no mesmo domínio.
+ * Usa a mesma chave e o mesmo formato do cliente antigo (index.html da versão 2), para que quem já usava
+ * a Lumina no mesmo domínio continue vendo as conversas salvas no navegador.
  */
 const CHAVE = 'lumina_chat_history_v3';
 

@@ -10,7 +10,7 @@ export const VOZES_GEMINI = [
   { id: 'Puck', rotulo: 'Studio Puck (masc.)' }
 ];
 
-// Mesmas chaves do index.html antigo
+// Mesmas chaves do cliente antigo (index.html da versão 2): as preferências de voz continuam valendo
 const LS_ATIVA = 'lumina_voice_enabled';
 const LS_VOZ = 'lumina_voice_name';
 

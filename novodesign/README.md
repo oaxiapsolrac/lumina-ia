@@ -1,7 +1,7 @@
 # Lumina — novo design (3.0)
 
-Interface da Lumina em React + TypeScript + Tailwind, separada do backend (`../backend`) e do cliente antigo (`../index.html`).
-Ela conversa com o backend pelas mesmas rotas do cliente antigo (`/chat/stream`, `/stats`, `/tts`).
+Interface da Lumina em React + TypeScript + Tailwind, separada do backend (`../backend`).
+Na versão 3.0 ela substitui o cliente antigo (`index.html` na raiz, removido) e usa as rotas `/chat/stream`, `/stats` e `/tts` do backend.
 
 ## Rodar na máquina
 
