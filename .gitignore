@@ -16,6 +16,13 @@ backend/.env.*
 
 # Cópias de segurança locais (reindexação e correções)
 backend/backups/
-backend/vector_store_cache.anterior.json
-backend/vector_store_cache.json.tmp
+backend/vector_store_cache*.anterior.json
+# Índices de modelos de embeddings alternativos (ex.: API NVIDIA). Só o índice padrão (MiniLM) vai para o
+# repositório; para usar outro no Render, gere com "npm run reindex" e adicione com "git add -f".
+backend/vector_store_cache.*.json
+backend/vector_store_cache*.json.tmp
+backend/base_inep_extraida.json.tmp
+
+# Resultados das rodadas do conjunto de avaliação
+backend/avaliacao/resultados/
 

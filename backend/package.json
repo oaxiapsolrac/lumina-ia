@@ -1,13 +1,16 @@
 {
   "name": "projeto-lumina-pibic",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "Arquitetura RAG para a Plataforma ELLAS",
   "main": "server_vetorial.js",
   "scripts": {
     "start": "node server_vetorial.js",
-    "test:cli": "node teste_busca_cli.js",
     "parse:ttl": "node ttl_parser.js",
+    "extrair:inep": "node extrair_inep.js",
+    "avaliar:validar": "node avaliacao/avaliar.js validar",
+    "avaliar:busca": "node avaliacao/avaliar.js busca",
+    "avaliar:respostas": "node avaliacao/avaliar.js respostas",
     "reindex": "node -e 'import(\"dotenv/config\").then(() => import(\"./vector_engine.js\")).then(m => m.vectorEngine.reindex()).then(r => console.log(r))'"
   },
   "dependencies": {

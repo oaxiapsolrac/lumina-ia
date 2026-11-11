@@ -735,6 +735,26 @@
       margin-top: 10px;
     }
 
+    /* Aviso da checagem de números: número da resposta que não aparece nos documentos consultados */
+    .aviso-numeros {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border: 1px solid rgba(245, 196, 107, 0.35);
+      border-radius: 12px;
+      background: rgba(245, 196, 107, 0.08);
+      color: #f5c46b;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+    .aviso-numeros strong { color: #ffd98e; font-weight: 600; }
+
+    /* Avaliação 👍/👎 marcada */
+    .action-icon-btn.btn-avaliar[aria-pressed="true"] { color: var(--accent-pink); background: rgba(255, 0, 212, 0.12); }
+    .action-icon-btn.btn-avaliar[aria-pressed="true"] svg { fill: currentColor; }
+
     .action-icon-btn {
       width: 32px;
       height: 32px;
@@ -909,6 +929,9 @@
     .doc-meta { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11.5px; font-weight: 400; line-height: 1.4; }
     .doc-tag { background: #2b2c30; color: var(--text-muted); padding: 2px 8px; border-radius: 4px; }
     .doc-details { font-size: 12.5px; font-weight: 400; color: var(--text-details); line-height: 1.5; }
+    .doc-fonte { margin-top: 8px; padding-top: 8px; border-top: 1px solid #333538; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
+    .doc-fonte strong { color: var(--text-details); font-weight: 600; }
+    .doc-fonte a { color: #f39be6; text-decoration: underline; text-underline-offset: 2px; }
 
     /* --- BARRA DE DIGITAÇÃO FIXA ESTILO GEMINI DARK MODE --- */
     .composer {
@@ -1786,7 +1809,7 @@
       let lastMetricas = null;
       let lastModelo = null;
 
-      (conv.messages || []).forEach(m => {
+      (conv.messages || []).forEach((m, indice) => {
         if (m.role === 'user') {
           let userHtml = m.text ? `<div>${escapeHtml(m.text)}</div>` : '';
           if (m.media && m.media.length > 0) {
@@ -1801,6 +1824,9 @@
           const htmlSeguro = m.rawText ? renderMarkdown(m.rawText) : (window.DOMPurify ? DOMPurify.sanitize(m.html || '') : escapeHtml(m.html || ''));
           const luminaMsg = appendMessage('lumina', htmlSeguro, m.modelName || selectedModelName);
           if (luminaMsg) luminaMsg.dataset.rawText = m.rawText || '';
+          if (m.verificacao) renderAvisoNumeros(luminaMsg, m.verificacao);
+          // Respostas salvas antes das avaliações não têm id: usa o mesmo formato do novodesign
+          prepararAvaliacao(luminaMsg, ID_RESPOSTA_VALIDO.test(m.id || '') ? m.id : `${conv.id}_${indice}`, m.avaliacao || null);
           conversationHistory.push({ role: 'assistant', content: m.rawText || m.html });
           if (m.docs && m.docs.length > 0) {
             lastDocs = m.docs;
@@ -1975,10 +2001,10 @@
             <button class="action-icon-btn" title="Copiar resposta" onclick="copyMessage(this)">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
             </button>
-            <button class="action-icon-btn" title="Bom resultado">
+            <button class="action-icon-btn btn-avaliar" data-valor="boa" title="Boa resposta" aria-label="Boa resposta" aria-pressed="false" onclick="avaliarMensagem(this, 'boa')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
             </button>
-            <button class="action-icon-btn" title="Ruim">
+            <button class="action-icon-btn btn-avaliar" data-valor="ruim" title="Resposta ruim" aria-label="Resposta ruim" aria-pressed="false" onclick="avaliarMensagem(this, 'ruim')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>
             </button>
           </div>
@@ -1991,6 +2017,64 @@
       scrollArea.scrollTop = scrollArea.scrollHeight;
       return row.querySelector('.bubble');
     }
+
+    // Checagem de números (evento 'verificacao' do servidor): avisa quando algum número da resposta
+    // não aparece nos documentos consultados. Fica fora da bolha para não entrar na cópia nem na leitura em voz.
+    function renderAvisoNumeros(bubble, verificacao) {
+      const row = bubble ? bubble.closest('.message-row') : null;
+      if (!row) return;
+      row.querySelector('.aviso-numeros')?.remove();
+      const faltando = verificacao && verificacao.status === 'alerta' ? (verificacao.naoEncontrados || []) : [];
+      if (faltando.length === 0) return;
+      const lista = faltando.map(n => `<strong>${escapeHtml(n.numero)}</strong>`).join(', ');
+      const aviso = document.createElement('div');
+      aviso.className = 'aviso-numeros';
+      aviso.setAttribute('role', 'note');
+      aviso.innerHTML = `<span aria-hidden="true">⚠️</span><span>${faltando.length === 1 ? 'Este número não aparece' : 'Estes números não aparecem'} nos documentos consultados: ${lista}. Pode ser um cálculo do modelo ou um erro; confira nas fontes.</span>`;
+      row.insertBefore(aviso, row.querySelector('.message-actions'));
+    }
+
+    // --- AVALIAÇÃO 👍/👎: fica só no histórico deste navegador, junto da conversa (nada vai para o servidor) ---
+    const ID_RESPOSTA_VALIDO = /^[A-Za-z0-9_-]{8,100}$/;
+
+    // Identifica a resposta dentro do histórico local, para marcar a avaliação na mensagem certa
+    function novoIdResposta() {
+      if (window.crypto && crypto.randomUUID) return `m_${crypto.randomUUID()}`;
+      return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    }
+
+    function atualizarBotoesAvaliacao(row, avaliacao) {
+      row.querySelectorAll('.btn-avaliar').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.valor === avaliacao)));
+    }
+
+    function prepararAvaliacao(bubble, id, avaliacao) {
+      const row = bubble ? bubble.closest('.message-row') : null;
+      if (!row) return;
+      row.dataset.respostaId = id;
+      row.dataset.avaliacao = avaliacao || '';
+      atualizarBotoesAvaliacao(row, avaliacao);
+    }
+
+    window.avaliarMensagem = function(btn, valor) {
+      const row = btn.closest('.message-row');
+      const id = row ? row.dataset.respostaId : null;
+      if (!id) return;
+      const nova = row.dataset.avaliacao === valor ? null : valor;
+      row.dataset.avaliacao = nova || '';
+      atualizarBotoesAvaliacao(row, nova);
+
+      // Guarda no histórico local (localStorage): some quando a conversa é excluída
+      const convs = getStoredConversations();
+      const conv = convs.find(c => c.id === currentConversationId);
+      const msgs = conv ? conv.messages : [];
+      const indice = msgs.findIndex((m, i) => m.role === 'lumina' && (m.id === id || (!m.id && `${conv.id}_${i}` === id)));
+      const msg = indice >= 0 ? msgs[indice] : null;
+      if (msg) {
+        msg.id = id;
+        msg.avaliacao = nova;
+        saveStoredConversations(convs);
+      }
+    };
 
     // --- CONTROLE DE VOZ UNIFICADO (GEMINI TTS + GOOGLE / NAVEGADOR / DISPOSITIVO) ---
     const GEMINI_TTS_VOICES = [
@@ -2584,9 +2668,25 @@
             <span class="doc-tag">🏷️ ${escapeHtml(doc.categoria)}</span>
           </div>
           <div class="doc-details">${escapeHtml(doc.detalhes)}</div>
+          ${htmlFonteDocumento(doc)}
         `;
         sourcesList.appendChild(card);
       });
+    }
+
+    // Citação formal e links da fonte (ex.: UNESCO UIS, CC BY-SA 4.0). Só links http(s) viram <a>.
+    function htmlFonteDocumento(doc) {
+      const links = (Array.isArray(doc.urlsFonte) ? doc.urlsFonte : []).map(u => {
+        try {
+          const url = new URL(u);
+          return url.protocol === 'https:' || url.protocol === 'http:' ? url : null;
+        } catch (e) { return null; }
+      }).filter(Boolean).slice(0, 3);
+      if (!doc.fonte && links.length === 0) return '';
+      const htmlLinks = links.map((url, i) =>
+        ` · <a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url.hostname)}${i > 0 ? ' (consulta exata)' : ''} ↗</a>`
+      ).join('');
+      return `<div class="doc-fonte"><strong>Fonte:</strong> ${escapeHtml(doc.fonte || '')}${htmlLinks}</div>`;
     }
 
     let attachedFiles = [];
@@ -2820,6 +2920,8 @@
           <span style="font-size:13.5px;color:var(--text-muted);margin-left:6px;">Consultando base vetorial e gerando resposta com <strong>${escapeHtml(selectedModelName)}</strong>...</span>
         </div>
       `, selectedModelName, false);
+      const respostaId = novoIdResposta();
+      prepararAvaliacao(loadingMsg, respostaId, null);
 
       try {
         const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -2850,6 +2952,8 @@
         let hasReceivedTokens = false;
         let lastSources = [];
         let lastMetrics = null;
+        let verificacaoNumeros = null;
+        let consultaUtilizada = '';
         let finalModelUsed = selectedModelName;
 
         while (true) {
@@ -2880,6 +2984,7 @@
               try {
                 const meta = JSON.parse(dataStr);
                 lastSources = meta.documentosRecuperados || [];
+                consultaUtilizada = meta.queryUtilizada || '';
                 lastMetrics = meta.metricas || null;
                 // Contexto só é atualizado pelo evento 'usage' (valor final real), evitando oscilação
                 if (meta.modeloUtilizado) {
@@ -2906,6 +3011,10 @@
                   if (elTempoLLM) elTempoLLM.innerText = `${metricas.tempoLLMMs} ms`;
                 }
               } catch (e) {}
+            } else if (eventType === 'verificacao') {
+              try {
+                verificacaoNumeros = JSON.parse(dataStr);
+              } catch (e) {}
             } else if (eventType === 'token') {
               try {
                 const { token } = JSON.parse(dataStr);
@@ -2931,6 +3040,7 @@
         const finalHtml = renderMarkdown(rawResponse || 'Nenhuma resposta gerada.');
         loadingMsg.innerHTML = finalHtml;
         loadingMsg.dataset.rawText = rawResponse;
+        renderAvisoNumeros(loadingMsg, verificacaoNumeros);
 
         const row = loadingMsg.closest('.message-row');
         if (row) {
@@ -2948,13 +3058,16 @@
         const convToUpdate = latestConvs.find(c => c.id === currentConversationId);
         if (convToUpdate) {
           convToUpdate.messages.push({
+            id: respostaId,
             role: 'lumina',
+            query: consultaUtilizada,
             html: finalHtml,
             rawText: rawResponse,
             modelName: finalModelUsed,
             docs: lastSources,
             metricas: lastMetrics,
-            modeloUtilizado: finalModelUsed
+            modeloUtilizado: finalModelUsed,
+            verificacao: verificacaoNumeros && verificacaoNumeros.status === 'alerta' ? verificacaoNumeros : null
           });
           saveStoredConversations(latestConvs);
           renderHistorySidebar();

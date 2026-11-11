@@ -1,15 +1,133 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { pipeline } from '@xenova/transformers';
 import { parseBackupEllasTTL, classificarRuido, limparPais } from './ttl_parser.js';
+import { IndiceBM25, normalizar } from './busca_lexica.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CACHE_FILE = path.join(__dirname, 'vector_store_cache.json');
-const CACHE_BACKUP_FILE = path.join(__dirname, 'vector_store_cache.anterior.json');
 const BASE_TTL_JSON = path.join(__dirname, 'base_ellas_ttl_completa.json');
+
+// --- Modelo de embeddings (configurável) ---
+// Lido sob demanda: este módulo é importado antes de o servidor carregar o .env.
+// EMBEDDING_PROVIDER=local (padrão) roda o modelo no próprio servidor; =nvidia usa a API da NVIDIA,
+// multilíngue, sem carregar modelo na memória. As perguntas passam a ser enviadas à NVIDIA.
+const MODELO_PADRAO = 'Xenova/all-MiniLM-L6-v2';
+const MODELO_API_PADRAO = 'nvidia/nemotron-3-embed-1b';
+const provedorEmbeddings = () => ((process.env.EMBEDDING_PROVIDER || 'local').trim().toLowerCase() === 'nvidia' ? 'nvidia' : 'local');
+const modeloEmbeddings = () => (process.env.EMBEDDING_MODEL || '').trim() || (provedorEmbeddings() === 'nvidia' ? MODELO_API_PADRAO : MODELO_PADRAO);
+// O nemotron-3-embed-1b devolve 2048 números; os 1024 primeiros dão a mesma qualidade
+// (medido no conjunto de avaliação) com metade do arquivo e da memória
+const dimensoesApi = () => {
+    const v = parseInt(process.env.EMBEDDING_DIMENSOES || '1024', 10);
+    return Number.isInteger(v) && v > 0 ? v : 1024;
+};
+const TIMEOUT_API_MS = () => parseInt(process.env.EMBEDDING_API_TIMEOUT_MS || '5000', 10);
+const PAUSA_APOS_FALHA_MS = 60000; // depois de uma falha da API, busca só por palavras durante 1 minuto
+
+function normalizarVetor(v) {
+    let n = 0;
+    for (const x of v) n += x * x;
+    n = Math.sqrt(n) || 1;
+    // 6 casas: o cache fica menor e o cosseno não muda de forma perceptível
+    return v.map((x) => Math.round((x / n) * 1e6) / 1e6);
+}
+
+// Modelos da família E5 foram treinados com prefixos que distinguem pergunta e documento
+function prefixos(modelo) {
+    return /(^|\/)(multilingual-)?e5-/i.test(modelo) ? { consulta: 'query: ', documento: 'passage: ' } : { consulta: '', documento: '' };
+}
+
+// Cada modelo tem seu próprio cache: vetores de modelos diferentes não são comparáveis
+function arquivoCache(modelo) {
+    if (modelo === MODELO_PADRAO) return path.join(__dirname, 'vector_store_cache.json');
+    return path.join(__dirname, `vector_store_cache.${modelo.replace(/[^a-zA-Z0-9]+/g, '_')}.json`);
+}
+const arquivoBackup = (cache) => cache.replace(/\.json$/, '.anterior.json');
+
+// --- Parâmetros da busca híbrida ---
+// Peso da busca por palavras (BM25 normalizado de 0 a 1) somado ao cosseno.
+// Medido em 22 perguntas de teste: MRR 0,61 sem BM25 e 0,82 com peso entre 0,2 e 0,3.
+const pesoLexico = () => {
+    // Variável vazia conta como não definida (Number('') daria 0 e desligaria o BM25 sem querer)
+    if (!String(process.env.BUSCA_PESO_LEXICO ?? '').trim()) return 0.25;
+    const v = Number(process.env.BUSCA_PESO_LEXICO);
+    return Number.isFinite(v) && v >= 0 ? v : 0.25;
+};
+// Bônus medidos no conjunto de avaliação (avaliacao/casos.json, 66 perguntas com documento-alvo):
+// MRR 0,872 → 0,924 com o MiniLM e 0,958 com os embeddings da NVIDIA.
+const BONUS_NOME = 0.1;           // nome do documento (ou parte dele) citado na pergunta, como palavra inteira
+const BONUS_PAIS = 0.08;          // país citado na pergunta, quando não há filtro de país
+const LIMIAR_DUPLICADO = 0.97;    // cosseno entre dois documentos a partir do qual são tratados como iguais
+
+// Corte de relevância: dos documentos escolhidos, só vão para o modelo os que têm pontuação de pelo menos
+// esta fração da pontuação do primeiro. 0 desliga. O padrão depende do modelo, porque a escala das notas muda:
+// MiniLM 0,75 (média de 3,1 documentos em vez de 4) e API 0,65 (3,2). Nos dois, nenhum documento certo
+// foi cortado no conjunto de avaliação; com a API, 0,75 já cortava um.
+const corteRelativo = () => {
+    const v = Number(process.env.BUSCA_CORTE_RELATIVO);
+    if (process.env.BUSCA_CORTE_RELATIVO !== undefined && process.env.BUSCA_CORTE_RELATIVO !== '' && Number.isFinite(v) && v >= 0 && v < 1) return v;
+    return provedorEmbeddings() === 'nvidia' ? 0.65 : 0.75;
+};
+
+/** Tira as séries anuais ("(série: 2013: 45,30%; ...)", "Série feminina: 2014: 6,29%; ...") de um texto. */
+function semSeriesHistoricas(texto) {
+    return String(texto || '')
+        .replace(/\s*[(\[]\s*s[ée]rie[^)\]]*[)\]]/gi, '')
+        .replace(/\s*S[ée]rie[^:.;]{0,30}:(?:\s*\d{4}:\s*[^;]*?(?:;|\.(?=\s|$)|$))+/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/** Texto em minúsculas, sem acento e com palavras separadas por um espaço, com espaço nas pontas. */
+const formaPalavras = (s) => ` ${normalizar(s).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+
+/**
+ * Partes do nome que, citadas na pergunta, indicam o documento: o nome inteiro, o curso depois de
+ * "Censo INEP:" e o que está dentro e fora de parênteses ("Role Models (Modelos Femininos)").
+ * Partes com menos de 4 letras ficam de fora ("Uem" casava com "quem").
+ */
+function partesDoNome(nome) {
+    const partes = new Set([formaPalavras(nome)]);
+    const semPrefixo = String(nome || '').replace(/^Censo INEP:\s*/i, '');
+    partes.add(formaPalavras(semPrefixo));
+    const m = semPrefixo.match(/^(.*?)\s*\((.*?)\)\s*$/);
+    if (m) {
+        partes.add(formaPalavras(m[1]));
+        partes.add(formaPalavras(m[2]));
+    }
+    return [...partes].filter((p) => p.trim().length >= 4);
+}
+
+// Pergunta que pede número ou estatística (português, espanhol e inglês; texto já sem acento)
+const PEDE_NUMERO = /\b(quant[oa]s?|cuant[oa]s?|porcent|percent|propor|taxa|tasa|numero|indice|indicador|estatistic|estadistic|dados?\b|participacao|participacion|representa|maioria|minoria|media|how many|share|rate)|%/;
+// Categorias de indicadores numéricos (ontologia, Censo INEP, UNESCO UIS, RICYT/RedIndices). As categorias
+// "Estatística - Barreiras/Soluções/Diagnóstico" da base curada descrevem barreiras em texto e ficam de fora.
+const CATEGORIA_ESTATISTICA = /^(Indicator|Indicador\b)/i;
+// Medido no conjunto de avaliação com a base UNESCO/RICYT (77 perguntas): sem penalidade 73/77 no top-4,
+// com 0,1 ficaram 76/77 (financiamento de pesquisa na Argentina voltou de 17º para o top-4). 0 desliga.
+const penalidadeEstatistica = () => {
+    const bruto = process.env.BUSCA_PENALIDADE_ESTATISTICA;
+    const v = Number(bruto);
+    return bruto !== undefined && String(bruto).trim() !== '' && Number.isFinite(v) && v >= 0 ? v : 0.1;
+};
+
+// Países reconhecidos na pergunta (português, espanhol e inglês) → forma usada no campo "pais" dos documentos
+const PAISES_NA_PERGUNTA = [
+    ['brasil', 'brasil'], ['brazil', 'brasil'], ['peru', 'peru'], ['bolivia', 'bolivia'], ['mexico', 'mexico'],
+    ['argentina', 'argentina'], ['chile', 'chile'], ['colombia', 'colombia'], ['equador', 'equador'], ['ecuador', 'equador'],
+    ['costa rica', 'costa rica'], ['uruguai', 'uruguai'], ['uruguay', 'uruguai'], ['paraguai', 'paraguai'], ['paraguay', 'paraguai'],
+    ['el salvador', 'el salvador'], ['venezuela', 'venezuela'], ['guatemala', 'guatemala'], ['cuba', 'cuba'], ['panama', 'panama']
+];
+
+const chaveNome = (nome) => normalizar(nome).replace(/[^\p{L}\p{N}]+/gu, '');
+
+function produtoEscalar(a, b) {
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+    return s;
+}
 
 // Caminhos candidatos, em ordem de prioridade (variável de ambiente primeiro).
 // O projeto irmão (teste-lumina-1artigosematec) fica um nível acima e usava '../';
@@ -33,38 +151,120 @@ const caminhoConhecimento = () => primeiroExistente([
 class VectorEngine {
     constructor() {
         this.embedder = null;
+        this.modelo = null;
         this.documents = [];
+        this.indiceLexico = null;
         this.isInitialized = false;
         this.dimensions = 384;
         this.reindexEmAndamento = null;
+        this.partesNome = [];
+        this.apiIndisponivelAte = 0;
+    }
+
+    async carregarModelo() {
+        const modelo = modeloEmbeddings();
+        if (provedorEmbeddings() === 'nvidia') {
+            this.modelo = modelo;
+            return;
+        }
+        if (this.embedder && this.modelo === modelo) return;
+        console.log(`⏳ Inicializando modelo de embeddings local (${modelo})...`);
+        // Importado só no modo local: no modo API o servidor não carrega o ONNX na memória
+        const { pipeline } = await import('@xenova/transformers');
+        this.embedder = await pipeline('feature-extraction', modelo);
+        this.modelo = modelo;
+    }
+
+    /** Embeddings pela API da NVIDIA (papel: 'consulta' | 'documento'). Lança erro em falha ou demora. */
+    async embeddingsApi(textos, papel) {
+        const chave = process.env.NVIDIA_API_KEY;
+        if (!chave) throw new Error('NVIDIA_API_KEY não configurada para EMBEDDING_PROVIDER=nvidia');
+        const res = await fetch('https://integrate.api.nvidia.com/v1/embeddings', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                model: modeloEmbeddings(),
+                input: textos,
+                input_type: papel === 'documento' ? 'passage' : 'query',
+                encoding_format: 'float',
+                truncate: 'END'
+            }),
+            signal: AbortSignal.timeout(papel === 'documento' ? 60000 : TIMEOUT_API_MS())
+        });
+        if (!res.ok) throw new Error(`API de embeddings respondeu ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const dados = await res.json();
+        return dados.data.map((d) => normalizarVetor(d.embedding.slice(0, dimensoesApi())));
+    }
+
+    /** Vetores de vários documentos (em lotes na API, um a um no modelo local). */
+    async embeddingsDocumentos(textos, aoProgredir) {
+        const vetores = [];
+        if (provedorEmbeddings() !== 'nvidia') {
+            for (const t of textos) {
+                vetores.push(await this.getEmbedding(t, 'documento'));
+                aoProgredir?.(vetores.length);
+            }
+            return vetores;
+        }
+        const LOTE = 32;
+        for (let i = 0; i < textos.length; i += LOTE) {
+            const lote = textos.slice(i, i + LOTE);
+            for (let tentativa = 1; ; tentativa++) {
+                try {
+                    vetores.push(...(await this.embeddingsApi(lote, 'documento')));
+                    break;
+                } catch (e) {
+                    if (tentativa >= 4) throw e;
+                    console.warn(`⚠️ Lote ${i / LOTE + 1}: ${e.message}. Nova tentativa em ${5 * tentativa} s...`);
+                    await new Promise((r) => setTimeout(r, 5000 * tentativa));
+                }
+            }
+            aoProgredir?.(vetores.length);
+            await new Promise((r) => setTimeout(r, 1600)); // a API gratuita aceita cerca de 40 chamadas por minuto
+        }
+        return vetores;
+    }
+
+    /** Monta o índice BM25 com os mesmos documentos do índice vetorial (o nome entra duas vezes para pesar mais). */
+    construirIndiceLexico() {
+        this.partesNome = this.documents.map((d) => [...new Set([d.nome, ...(d.outrosNomes || [])].flatMap(partesDoNome))]);
+        this.indiceLexico = new IndiceBM25(this.documents.map((d) => `${d.nome} ${d.nome} ${d.texto}`));
     }
 
     async init() {
         if (this.isInitialized) return;
+        await this.carregarModelo();
 
-        console.log("⏳ Inicializando modelo de embeddings local (Xenova/all-MiniLM-L6-v2)...");
-        this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-
-        // Se já existir cache de vetores salvo, carrega em milissegundos
-        if (fs.existsSync(CACHE_FILE)) {
-            console.log("⚡ Carregando banco vetorial do cache local...");
-            const rawCache = fs.readFileSync(CACHE_FILE, 'utf-8');
-            this.documents = JSON.parse(rawCache);
+        // Se já existir cache de vetores salvo para este modelo, carrega em milissegundos
+        const cache = arquivoCache(this.modelo);
+        if (fs.existsSync(cache)) {
+            console.log(`⚡ Carregando banco vetorial do cache local (${path.basename(cache)})...`);
+            this.documents = JSON.parse(fs.readFileSync(cache, 'utf-8'));
+            // No modo API a dimensão é a configurada: não depende de a API estar no ar na hora de subir o servidor
+            const dimensao = provedorEmbeddings() === 'nvidia' ? dimensoesApi() : (await this.getEmbedding('teste', 'consulta')).length;
+            if (this.documents[0] && this.documents[0].vetor?.length !== dimensao) {
+                console.warn(`⚠️ Cache com vetores de ${this.documents[0].vetor?.length} dimensões, mas o modelo gera ${dimensao}. Reindexando...`);
+                await this.reindex();
+                return;
+            }
+            this.dimensions = dimensao;
+            this.construirIndiceLexico();
             console.log(`✅ Banco vetorial carregado com ${this.documents.length} documentos indexados da Ontologia ELLAS!`);
             this.isInitialized = true;
             return;
         }
 
-        // Caso contrário, gera os vetores a partir do backup completo da ontologia
-        console.log("📦 Cache não encontrado. Gerando novo índice vetorial a partir do backup_ellas.ttl...");
+        // Caso contrário, gera os vetores a partir das bases
+        console.log(`📦 Cache ${path.basename(cache)} não encontrado. Gerando novo índice vetorial...`);
         await this.reindex();
     }
 
-    async getEmbedding(text) {
-        if (!this.embedder) {
-            this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-        }
-        const output = await this.embedder(text, { pooling: 'mean', normalize: true });
+    /** @param {'consulta'|'documento'} papel define o prefixo exigido por alguns modelos (E5) */
+    async getEmbedding(text, papel = 'consulta') {
+        await this.carregarModelo();
+        if (provedorEmbeddings() === 'nvidia') return (await this.embeddingsApi([text], papel))[0];
+        const prefixo = prefixos(this.modelo)[papel] || '';
+        const output = await this.embedder(prefixo + text, { pooling: 'mean', normalize: true });
         return Array.from(output.data);
     }
 
@@ -92,7 +292,7 @@ class VectorEngine {
         console.log("🔄 Reindexando a base vetorial...");
         const rawDocs = [];
         const seenKeys = new Set();
-        const resumo = { ontologia: 0, ruidoDescartado: 0, inep: 0, soaas: 0, curado: 0, fontesAusentes: [] };
+        const resumo = { ontologia: 0, ruidoDescartado: 0, inep: 0, unescoRicyt: 0, soaas: 0, curado: 0, fontesAusentes: [] };
 
         // 1. Ontologia ELLAS (JSON gerado pelo ttl_parser.js, ou o próprio TTL se o JSON não existir)
         let docsTTL = [];
@@ -112,23 +312,22 @@ class VectorEngine {
             }
             doc.pais = limparPais(doc.pais) || "América Latina";
 
-            const key = `${doc.pais}-${doc.nome}`.toLowerCase();
+            // O tipo entra na chave: o mesmo nome pode ser uma Iniciativa e uma Política diferentes (ex.: W-STEM Project)
+            const key = `${doc.pais}-${doc.tipo || doc.categoria}-${doc.nome}`.toLowerCase();
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
             resumo.ontologia++;
 
-            let detalhesEnriquecidos = doc.detalhes || `Iniciativa ou conceito mapeado no(a) ${doc.pais} pelo Projeto ELLAS (UFMT).`;
-            const nomeLower = doc.nome.toLowerCase();
-
-            if (nomeLower.includes("programar") || nomeLower.includes("código") || nomeLower.includes("code") || nomeLower.includes("software") || nomeLower.includes("dev") || nomeLower.includes("pyladies") || nomeLower.includes("reprograma")) {
-                detalhesEnriquecidos += " Foco em ensino de programação, capacitação técnica em software, desenvolvimento web e inclusão digital de mulheres.";
-            } else if (nomeLower.includes("robot") || nomeLower.includes("maker") || nomeLower.includes("stem") || nomeLower.includes("steam") || nomeLower.includes("meninas")) {
-                detalhesEnriquecidos += " Foco em incentivo a meninas e mulheres nas ciências exatas, robótica, engenharia e áreas de STEM.";
-            }
+            // Só o que está na base: a antiga heurística que acrescentava frases pelo nome
+            // ("Foco em ensino de programação...", "...robótica...") virava fato inventado na resposta.
+            const detalhesEnriquecidos = doc.detalhes || `Iniciativa ou conceito mapeado no(a) ${doc.pais} pelo Projeto ELLAS (UFMT).`;
+            // Nomes do mesmo indicador em outros idiomas (traduções unidas pelo ttl_parser.js)
+            const outrosNomes = Array.isArray(doc.outrosNomes) && doc.outrosNomes.length ? doc.outrosNomes : null;
 
             rawDocs.push({
                 id: doc.id,
                 nome: doc.nome,
+                outrosNomes,
                 pais: doc.pais || "América Latina",
                 categoria: doc.categoria || doc.tipo || "Iniciativa",
                 tipo: doc.tipo || doc.categoria || "Iniciativa",
@@ -140,7 +339,7 @@ class VectorEngine {
                 areas: doc.areas || null,
                 objetivos: doc.objetivos || null,
                 detalhes: detalhesEnriquecidos,
-                texto: `Nome: ${doc.nome}. País: ${doc.pais}. Categoria: ${doc.categoria}. ${detalhesEnriquecidos}`
+                texto: `Nome: ${String(doc.nome).replace(/[.\s]+$/, '')}. País: ${doc.pais}. Categoria: ${doc.categoria}. ${detalhesEnriquecidos}${outrosNomes ? `. Outros nomes: ${outrosNomes.join('; ')}` : ''}`
             });
         }
 
@@ -163,6 +362,46 @@ class VectorEngine {
             }
         } else {
             resumo.fontesAusentes.push('INEP (base_inep_extraida.json)');
+        }
+
+        // 2b. Indicadores da UNESCO (UIS e DataHub) e da RICYT/RedIndices para 11 países da América Latina.
+        // Gerado na pasta ellas.ufmt/newdata (construir_base_lumina.py + construir_extras_unesco.py), com os
+        // valores conferidos nas APIs oficiais e os erros das fontes já excluídos.
+        const UNESCO_RICYT_JSON = path.join(__dirname, 'base_unesco_ricyt.json');
+        if (fs.existsSync(UNESCO_RICYT_JSON)) {
+            try {
+                const docsUR = JSON.parse(fs.readFileSync(UNESCO_RICYT_JSON, 'utf-8'));
+                for (const doc of docsUR) {
+                    const key = `${doc.pais}-${doc.categoria}-${doc.nome}`.toLowerCase();
+                    if (seenKeys.has(key)) continue;
+                    seenKeys.add(key);
+                    const outrosNomes = Array.isArray(doc.outrosNomes) && doc.outrosNomes.length ? doc.outrosNomes : null;
+                    rawDocs.push({
+                        id: doc.id,
+                        nome: doc.nome,
+                        outrosNomes,
+                        pais: doc.pais,
+                        categoria: doc.categoria,
+                        tipo: doc.tipo || doc.categoria,
+                        areas: doc.areas || null,
+                        objetivos: doc.objetivos || null,
+                        detalhes: doc.detalhes,
+                        // Citação: a licença CC BY-SA 4.0 da UNESCO pede a fonte com a licença e o link
+                        fonte: doc.fonte || null,
+                        urlsFonte: Array.isArray(doc.urlsFonte) && doc.urlsFonte.length ? doc.urlsFonte : null,
+                        // Texto do vetor sem as séries anuais (só o dado mais recente): com as séries, o total de
+                        // pesquisadoras do Uruguai caía para 21º na busca. A série completa continua em "detalhes".
+                        // Os nomes em espanhol e inglês ajudam a busca em perguntas nessas línguas.
+                        texto: `${semSeriesHistoricas(doc.texto)}${outrosNomes ? ` Outros nomes: ${outrosNomes.join('; ')}` : ''}`
+                    });
+                    resumo.unescoRicyt++;
+                }
+                console.log(`✅ ${resumo.unescoRicyt} indicadores e registros da UNESCO e da RICYT/RedIndices integrados.`);
+            } catch (e) {
+                console.warn("⚠️ Aviso ao carregar base_unesco_ricyt.json:", e.message);
+            }
+        } else {
+            resumo.fontesAusentes.push('UNESCO/RICYT (base_unesco_ricyt.json)');
         }
 
         // 3. Ingestão de Conhecimento Semântico do SOAAS
@@ -235,36 +474,35 @@ class VectorEngine {
         }
         console.log(`📊 Total de ${rawDocs.length} documentos para vetorização. Gerando embeddings...`);
 
-        const indexedDocs = [];
-        let count = 0;
+        await this.carregarModelo();
         const total = rawDocs.length;
-
-        for (const doc of rawDocs) {
-            const vetor = await this.getEmbedding(doc.texto);
-            indexedDocs.push({
-                ...doc,
-                vetor: vetor
-            });
-            count++;
-            if (count % 100 === 0 || count === total) {
-                console.log(`⏳ Progresso: ${count}/${total} documentos vetorizados (${Math.round(count/total*100)}%)`);
+        let ultimoAviso = 0;
+        const vetores = await this.embeddingsDocumentos(rawDocs.map((d) => d.texto), (feitos) => {
+            if (feitos - ultimoAviso >= 100 || feitos === total) {
+                ultimoAviso = feitos;
+                console.log(`⏳ Progresso: ${feitos}/${total} documentos vetorizados (${Math.round(feitos / total * 100)}%)`);
             }
-        }
+        });
+        const indexedDocs = rawDocs.map((doc, i) => ({ ...doc, vetor: vetores[i] }));
 
         this.documents = indexedDocs;
+        this.dimensions = indexedDocs[0]?.vetor.length || this.dimensions;
+        this.construirIndiceLexico();
         this.isInitialized = true;
 
         // Guarda o cache anterior antes de sobrescrever, para permitir voltar atrás
-        if (fs.existsSync(CACHE_FILE)) {
-            fs.copyFileSync(CACHE_FILE, CACHE_BACKUP_FILE);
-            console.log(`🗂️ Cache anterior copiado para ${CACHE_BACKUP_FILE}`);
+        const cache = arquivoCache(this.modelo);
+        if (fs.existsSync(cache)) {
+            fs.copyFileSync(cache, arquivoBackup(cache));
+            console.log(`🗂️ Cache anterior copiado para ${arquivoBackup(cache)}`);
         }
         // Escreve em arquivo temporário e renomeia, para não deixar um cache corrompido se o processo cair no meio
-        const tmp = `${CACHE_FILE}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify(indexedDocs, null, 2));
-        fs.renameSync(tmp, CACHE_FILE);
-        console.log(`💾 Cache do banco vetorial salvo com sucesso em ${CACHE_FILE}!`);
-        return { totalDocumentos: this.documents.length, ...resumo };
+        const tmp = `${cache}.tmp`;
+        // Vetores da API são grandes (1024 números por documento): sem indentação o arquivo fica 2× menor
+        fs.writeFileSync(tmp, provedorEmbeddings() === 'nvidia' ? JSON.stringify(indexedDocs) : JSON.stringify(indexedDocs, null, 2));
+        fs.renameSync(tmp, cache);
+        console.log(`💾 Cache do banco vetorial salvo com sucesso em ${cache}!`);
+        return { totalDocumentos: this.documents.length, modeloEmbeddings: this.modelo, ...resumo };
     }
 
     async search(query, options = {}) {
@@ -278,8 +516,27 @@ class VectorEngine {
             await this.init();
         }
 
-        const queryVetor = await this.getEmbedding(query);
-        const queryLower = query.toLowerCase();
+        // Vetor da pergunta. Se a API de embeddings falhar ou demorar, a busca segue só por palavras (BM25 + bônus);
+        // no conjunto de avaliação isso ainda acerta o documento entre os 4 primeiros em 55 de 60 perguntas.
+        let queryVetor = null;
+        let modoBusca = 'hibrida';
+        if (provedorEmbeddings() === 'nvidia' && Date.now() < this.apiIndisponivelAte) {
+            modoBusca = 'palavras';
+        } else {
+            try {
+                queryVetor = await this.getEmbedding(query, 'consulta');
+            } catch (e) {
+                if (provedorEmbeddings() !== 'nvidia') throw e;
+                this.apiIndisponivelAte = Date.now() + PAUSA_APOS_FALHA_MS;
+                console.warn(`⚠️ Embeddings da API indisponíveis (${e.message}). Busca só por palavras por ${PAUSA_APOS_FALHA_MS / 1000} s.`);
+                modoBusca = 'palavras';
+            }
+        }
+        const consultaPalavras = formaPalavras(query);
+        const lexico = this.indiceLexico ? this.indiceLexico.pontuar(query) : null;
+        const peso = queryVetor ? pesoLexico() : 1;
+        // Só por palavras as notas têm outra escala e o corte tirava documentos certos: nesse modo ele fica desligado
+        const corte = options.corteRelativo !== undefined ? Number(options.corteRelativo) : (queryVetor ? corteRelativo() : 0);
 
         // Helper para normalizar e casar nomes de países e variações regionais
         const matchPais = (docPais, filtroPais) => {
@@ -306,41 +563,79 @@ class VectorEngine {
             return aliases.some(alias => dNorm.includes(norm(alias)));
         };
 
+        // Documentos que passam pelos filtros de metadados
+        const candidatos = [];
+        for (let i = 0; i < this.documents.length; i++) {
+            const doc = this.documents[i];
+            if (pais && !matchPais(doc.pais, pais)) continue;
+            if (categoria && doc.categoria.toLowerCase() !== categoria.toLowerCase()) continue;
+            candidatos.push(i);
+        }
+        // BM25 normalizado pelo maior valor entre os candidatos (0 a 1)
+        let maxLexico = 0;
+        if (lexico) for (const i of candidatos) if (lexico[i] > maxLexico) maxLexico = lexico[i];
+
+        // Nome (ou parte do nome) citado na pergunta. Vale a citação mais específica: em "Engenharia Elétrica",
+        // o curso "Engenharia Elétrica" ganha o bônus e o curso genérico "Engenharia" não.
+        const citadas = new Map(); // índice do documento → parte mais longa citada
+        for (const i of candidatos) {
+            let maior = null;
+            for (const p of this.partesNome[i] || []) if (consultaPalavras.includes(p) && (!maior || p.length > maior.length)) maior = p;
+            if (maior) citadas.set(i, maior);
+        }
+        const partesCitadas = [...new Set(citadas.values())];
+        for (const [i, p] of citadas) {
+            if (partesCitadas.some((o) => o.length > p.length && o.includes(p))) citadas.delete(i);
+        }
+        // Pergunta que não pede número ("O que a Argentina faz...", "Quais iniciativas..."): os documentos
+        // estatísticos perdem um pouco de nota, para não ocuparem o lugar de políticas e iniciativas
+        const penalizarEstatisticas = !PEDE_NUMERO.test(normalizar(query));
+        // País citado na pergunta (sem filtro de país): bônus para documentos daquele país
+        const paisesCitados = pais ? [] : [...new Set(PAISES_NA_PERGUNTA.filter(([forma]) => consultaPalavras.includes(` ${forma} `)).map(([, p]) => p))];
+
         const scored = [];
-        for (const doc of this.documents) {
-            // Filtros de metadados opcionais
-            if (pais && !matchPais(doc.pais, pais)) {
-                continue;
-            }
-            if (categoria && doc.categoria.toLowerCase() !== categoria.toLowerCase()) {
-                continue;
-            }
+        for (const i of candidatos) {
+            const doc = this.documents[i];
+            // Vetores normalizados: o produto escalar já é o cosseno
+            const semantico = queryVetor ? produtoEscalar(queryVetor, doc.vetor) : 0;
+            const lexicoNorm = maxLexico > 0 ? lexico[i] / maxLexico : 0;
+            const paisDoc = paisesCitados.length ? normalizar(doc.pais) : '';
+            const bonusPais = paisesCitados.some((p) => paisDoc.includes(p)) ? BONUS_PAIS : 0;
+            const penalidade = penalizarEstatisticas && CATEGORIA_ESTATISTICA.test(doc.categoria || '') ? penalidadeEstatistica() : 0;
+            const score = semantico + peso * lexicoNorm + (citadas.has(i) ? BONUS_NOME : 0) + bonusPais - penalidade;
+            if (score >= minScore) scored.push({ doc, score, semantico });
+        }
+        scored.sort((a, b) => b.score - a.score);
 
-            // Similaridade semântica de cosseno
-            let score = this.cosineSimilarity(queryVetor, doc.vetor);
-
-            // Boost léxico (se o termo exato estiver no nome da entidade)
-            if (queryLower.includes(doc.nome.toLowerCase()) || doc.nome.toLowerCase().includes(queryLower)) {
-                score = Math.min(1.0, score + 0.15);
-            }
-
-            if (score >= minScore) {
-                scored.push({
-                    id: doc.id,
-                    nome: doc.nome,
-                    pais: doc.pais,
-                    categoria: doc.categoria,
-                    tipo: doc.tipo,
-                    detalhes: doc.detalhes,
-                    score: Number(score.toFixed(4)),
-                    texto: doc.texto
-                });
-            }
+        // Top-K sem repetições: mesmo nome (com/sem acento) ou vetor praticamente idêntico a um já escolhido
+        const escolhidos = [];
+        const nomesVistos = new Set();
+        for (const item of scored) {
+            if (escolhidos.length >= topK) break;
+            const chave = chaveNome(item.doc.nome);
+            if (nomesVistos.has(chave)) continue;
+            if (escolhidos.some((e) => produtoEscalar(e.doc.vetor, item.doc.vetor) > LIMIAR_DUPLICADO)) continue;
+            nomesVistos.add(chave);
+            escolhidos.push(item);
         }
 
-        // Ordena por score descendente
-        scored.sort((a, b) => b.score - a.score);
-        const results = scored.slice(0, topK);
+        // Corte de relevância: tira os documentos bem abaixo do primeiro (sempre fica pelo menos um)
+        const cortados = corte > 0 && escolhidos.length ? escolhidos.filter((e, i) => i === 0 || e.score >= corte * escolhidos[0].score) : escolhidos;
+
+        const results = cortados.map(({ doc, score, semantico }) => ({
+            id: doc.id,
+            nome: doc.nome,
+            outrosNomes: doc.outrosNomes || null,
+            pais: doc.pais,
+            categoria: doc.categoria,
+            tipo: doc.tipo,
+            detalhes: doc.detalhes,
+            fonte: doc.fonte || null,
+            urlsFonte: doc.urlsFonte || null,
+            score: Number(Math.min(1, score).toFixed(4)),
+            scoreSemantico: Number(semantico.toFixed(4)),
+            texto: doc.texto
+        }));
         const durationMs = Date.now() - start;
 
         return {
@@ -349,6 +644,8 @@ class VectorEngine {
             topKSolicitado: topK,
             filtroPais: pais || 'Todos',
             tempoBuscaMs: durationMs,
+            modoBusca,
+            documentosCortados: escolhidos.length - cortados.length,
             resultados: results
         };
     }
@@ -360,13 +657,15 @@ class VectorEngine {
             paises.add(doc.pais);
             categorias.add(doc.categoria);
         }
+        const modelo = this.modelo || modeloEmbeddings();
         return {
             totalDocumentos: this.documents.length,
             dimensoesVetor: this.dimensions,
-            modeloEmbeddings: "Xenova/all-MiniLM-L6-v2 (Local ONNX)",
+            modeloEmbeddings: provedorEmbeddings() === 'nvidia' ? `${modelo} (API NVIDIA, ${dimensoesApi()} dimensões)` : `${modelo} (Local ONNX)`,
+            busca: `híbrida: cosseno + ${pesoLexico()} × BM25, corte de relevância ${corteRelativo()}`,
             paisesIndexados: Array.from(paises),
             categoriasIndexadas: Array.from(categorias),
-            cacheStatus: fs.existsSync(CACHE_FILE) ? "Salvo em disco" : "Em memória"
+            cacheStatus: fs.existsSync(arquivoCache(modelo)) ? "Salvo em disco" : "Em memória"
         };
     }
 }
