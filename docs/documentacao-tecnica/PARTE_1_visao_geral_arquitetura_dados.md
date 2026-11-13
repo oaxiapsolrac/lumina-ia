@@ -33,11 +33,12 @@ Quatro pontos do pedido não correspondem ao código. A documentação segue o c
 
 A Lumina é a assistente conversacional do Projeto ELLAS (*Equality in Leadership for Latin American STEM*), liderado pela UFMT em cooperação com a UMSA (Bolívia) e a ULima (Peru). A missão está escrita no prompt do sistema montado por `construirSystemPrompt()` (`server_vetorial.js`): "responder sobre igualdade de gênero em STEM na América Latina usando somente os documentos recuperados abaixo."
 
-O conhecimento vem de dois eixos principais:
-- **Ontologia ELLAS:** iniciativas, políticas, indicadores, fatores (barreiras e facilitadores), artigos, organizações e comunidades sobre mulheres em STEM na América Latina. Arquivo: `base_ellas_ttl_completa.json`.
-- **Censo da Educação Superior (INEP/MEC):** participação de mulheres nas matrículas, nos ingressos e nas conclusões de cada curso, agrupados pela classificação CINE, e as instituições de ensino superior cadastradas. Arquivo: `base_inep_extraida.json`.
-
-Bases complementares ampliam a cobertura regional: UNESCO/RICYT, CEPALSTAT, OECD STIP Compass, World Bank *Women, Business and the Law* e a base curada `conhecimento.js`.
+A Lumina tem uma base de conhecimento própria, com três origens (contagens na seção 1.3):
+- **Dados do Projeto ELLAS**, guardados no GraphDB do projeto:
+  - **Ontologia ELLAS:** iniciativas, políticas, indicadores, fatores (barreiras e facilitadores), artigos, organizações e comunidades sobre mulheres em STEM na América Latina. Arquivo: `base_ellas_ttl_completa.json`.
+  - **Censo da Educação Superior (INEP/MEC):** participação de mulheres nas matrículas, nos ingressos e nas conclusões de cada curso, agrupados pela classificação CINE, e as instituições de ensino superior cadastradas. Arquivo: `base_inep_extraida.json`.
+- **Bases públicas internacionais coletadas para a Lumina:** UNESCO/RICYT, CEPALSTAT, OECD STIP Compass e World Bank *Women, Business and the Law*, tratadas pelos pipelines Python da pasta `newdata/`. Somam mais da metade dos documentos do índice.
+- **Base curada** `conhecimento.js`, escrita à mão.
 
 ### 1.2 Capacidades funcionais
 
@@ -378,7 +379,7 @@ graph TD
 
 **As três partes.**
 1. **A página** que a pessoa abre no navegador, chamada de *front-end* e publicada no Vercel. Ela mostra a conversa e envia as perguntas. As chaves de acesso aos serviços de inteligência artificial não ficam nela.
-2. **O servidor**, chamado de *backend* e publicado no Render. Ele recebe a pergunta, procura os documentos do Projeto ELLAS relacionados a ela e prepara o pedido para o modelo de linguagem.
+2. **O servidor**, chamado de *backend* e publicado no Render. Ele recebe a pergunta, procura na base da Lumina os documentos relacionados a ela e prepara o pedido para o modelo de linguagem.
 3. **Os serviços externos**: Groq, Google Gemini, NVIDIA e modelos menores no Ollama. Eles executam os modelos de linguagem, que são os programas que escrevem o texto da resposta. O Gemini também transforma a resposta em voz, quando a pessoa escolhe uma voz do Gemini.
 
 **O caminho de uma pergunta.**
@@ -484,7 +485,7 @@ flowchart LR
 
 **Em linguagem simples**
 
-**O que o desenho mostra.** Como os dados do Projeto ELLAS viram a base de consulta da Lumina. Essa preparação é feita de tempos em tempos, quando os dados mudam, e não a cada pergunta. Ela lembra a organização de uma biblioteca: juntar o material, conferir, catalogar e montar o fichário de busca. O desenho se lê da esquerda para a direita.
+**O que o desenho mostra.** Como os dados do Projeto ELLAS e as bases públicas coletadas para a Lumina viram a base de consulta da Lumina. Essa preparação é feita de tempos em tempos, quando os dados mudam, e não a cada pergunta. Ela lembra a organização de uma biblioteca: juntar o material, conferir, catalogar e montar o fichário de busca. O desenho se lê da esquerda para a direita.
 
 **Como ler.**
 - Os cilindros são bancos de dados e arquivos de dados.
@@ -496,7 +497,7 @@ flowchart LR
 **As etapas.**
 1. **De onde vêm os dados.** São três origens:
    - o GraphDB, o banco de dados do Projeto ELLAS. Ele guarda a ontologia, que é um mapa de iniciativas, organizações, comunidades, políticas, indicadores, fatores e publicações, com as relações entre eles. Guarda também uma cópia do Censo da Educação Superior do INEP;
-   - as bases internacionais (UNESCO e RICYT, CEPALSTAT, OECD STIP e Banco Mundial), preparadas por programas em Python na pasta `newdata/`;
+   - as bases públicas internacionais coletadas para a Lumina (UNESCO e RICYT, CEPALSTAT, OECD STIP e Banco Mundial), preparadas por programas em Python na pasta `newdata/`;
    - uma base curada à mão (`conhecimento.js`), com biografias, fatores e políticas.
 
    Dos 2.595 documentos da base publicada, 1.131 vêm do GraphDB (836 da ontologia e 295 do INEP), 1.436 das bases internacionais e 28 da base curada (seção 1.3).

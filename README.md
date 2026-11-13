@@ -1,6 +1,6 @@
 # Lumina 3.0
 
-A Lumina é a assistente conversacional do **Projeto ELLAS** (*Equality in Leadership for Latin American STEM*) sobre igualdade de gênero em ciência, tecnologia, engenharia e matemática (STEM) na América Latina. Ela responde com base em 2.595 documentos do Projeto ELLAS e de bases públicas e mostra de onde veio cada dado.
+A Lumina é a assistente conversacional do **Projeto ELLAS** (*Equality in Leadership for Latin American STEM*) sobre igualdade de gênero em ciência, tecnologia, engenharia e matemática (STEM) na América Latina. Ela responde com base na sua própria base de conhecimento, de 2.595 documentos: uma parte vem do Projeto ELLAS, e o restante foi coletado de bases públicas internacionais para a Lumina. Em cada resposta, a Lumina mostra de onde veio cada dado.
 
 O Projeto ELLAS é liderado pela Universidade Federal de Mato Grosso (UFMT), em cooperação com a Universidad Mayor de San Andrés (UMSA, Bolívia) e a Universidad de Lima (ULima, Peru).
 
@@ -24,7 +24,7 @@ O Projeto ELLAS é liderado pela Universidade Federal de Mato Grosso (UFMT), em 
 flowchart LR
     P(["Pessoa"]) -->|"1. pergunta"| SITE["Site da Lumina<br/>novodesign, no Vercel"]
     SITE -->|"2. envia a pergunta"| SERV["Servidor<br/>backend, no Render"]
-    SERV -->|"3. procura"| BASE[("Base do Projeto ELLAS<br/>2.595 documentos")]
+    SERV -->|"3. procura"| BASE[("Base da Lumina<br/>2.595 documentos")]
     BASE -->|"4. documentos mais próximos"| SERV
     SERV -->|"5. pergunta e documentos"| LLM["Modelo de linguagem<br/>Groq, Gemini, NVIDIA ou Ollama"]
     LLM -->|"6. texto da resposta"| SERV
@@ -33,7 +33,7 @@ flowchart LR
 
 **Em linguagem simples.** A Lumina não responde de memória. A cada pergunta:
 1. o site envia a pergunta ao servidor;
-2. o servidor procura, entre os 2.595 documentos da base, os mais próximos do assunto, comparando o sentido do texto e as palavras;
+2. o servidor procura, entre os 2.595 documentos da base da Lumina, os mais próximos do assunto, comparando o sentido do texto e as palavras;
 3. o servidor envia a pergunta e esses documentos a um modelo de linguagem, com a instrução de responder só com base neles;
 4. a resposta volta ao site aos poucos, enquanto é escrita, com a lista de fontes. No fim, o servidor confere se os números citados aparecem nos documentos.
 
@@ -41,18 +41,23 @@ No desenho, a forma arredondada é a pessoa, os retângulos são programas, o ci
 
 A busca não usa banco de dados. Os documentos e os vetores de cada um (listas de números que representam o sentido do texto) ficam num arquivo pronto, `backend/vector_store_cache.json`, que o servidor carrega na memória quando liga. A busca soma a semelhança de sentido entre os vetores a uma busca por palavras (BM25).
 
-## Base de conhecimento
+## Base de conhecimento da Lumina
 
-| Fonte | Conteúdo | Documentos |
-|---|---|---:|
-| Ontologia ELLAS (GraphDB do Projeto ELLAS) | iniciativas, políticas, indicadores, fatores (barreiras e facilitadores), artigos, organizações e comunidades sobre mulheres em STEM na América Latina | 836 |
-| Censo da Educação Superior (INEP/MEC) | participação de mulheres nas matrículas, nos ingressos e nas conclusões de 95 cursos, e 200 instituições | 295 |
-| CEPALSTAT (CEPAL) | indicadores de trabalho, renda, uso do tempo e participação política | 655 |
-| World Bank *Women, Business and the Law* | leis e marcos legais sobre igualdade de gênero | 308 |
-| OECD STIP Compass | políticas de ciência, tecnologia e inovação | 255 |
-| UNESCO UIS e DataHub, RICYT e RedIndices | indicadores de pesquisadoras, graduadas por área e docentes; iniciativas, cátedras e marcos legais reunidos pela UNESCO | 218 |
-| Base curada (`conhecimento.js`) | biografias, fatores e políticas escritos à mão | 28 |
-| **Total** | | **2.595** |
+A base da Lumina reúne 2.595 documentos de três origens:
+- **Projeto ELLAS:** 1.131 documentos, da ontologia ELLAS e do Censo da Educação Superior, guardados no GraphDB do projeto;
+- **bases públicas internacionais coletadas para a Lumina:** 1.436 documentos, da CEPALSTAT, do Banco Mundial, da OECD, da UNESCO e da RICYT, tratados pelos programas da pasta `newdata/`, que fica fora deste repositório;
+- **base curada:** 28 documentos escritos à mão.
+
+| Fonte | Origem | Conteúdo | Documentos |
+|---|---|---|---:|
+| Ontologia ELLAS | Projeto ELLAS | iniciativas, políticas, indicadores, fatores (barreiras e facilitadores), artigos, organizações e comunidades sobre mulheres em STEM na América Latina | 836 |
+| Censo da Educação Superior (INEP/MEC) | Projeto ELLAS | participação de mulheres nas matrículas, nos ingressos e nas conclusões de 95 cursos, e 200 instituições | 295 |
+| CEPALSTAT (CEPAL) | coletada para a Lumina | indicadores de trabalho, renda, uso do tempo e participação política | 655 |
+| World Bank *Women, Business and the Law* | coletada para a Lumina | leis e marcos legais sobre igualdade de gênero | 308 |
+| OECD STIP Compass | coletada para a Lumina | políticas de ciência, tecnologia e inovação | 255 |
+| UNESCO UIS e DataHub, RICYT e RedIndices | coletada para a Lumina | indicadores de pesquisadoras, graduadas por área e docentes; iniciativas, cátedras e marcos legais reunidos pela UNESCO | 218 |
+| Base curada (`conhecimento.js`) | escrita para a Lumina | biografias, fatores e políticas | 28 |
+| **Total** | | | **2.595** |
 
 As bases ficam em `backend/base_*.json`, e o índice pronto, em `backend/vector_store_cache.json`. A base curada fica fora do repositório (veja [Limitações conhecidas](#limitações-conhecidas)). Detalhes de cada base: [Parte 1, seção 1.3](docs/documentacao-tecnica/PARTE_1_visao_geral_arquitetura_dados.md#13-bases-indexadas).
 
