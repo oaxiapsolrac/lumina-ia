@@ -24,7 +24,8 @@ export const MODELOS: Modelo[] = [
   { valor: 'gpt-oss-20b', rotulo: 'GPT-OSS 20B', nome: 'GPT-OSS 20B', descricao: 'Raciocínio open-source leve', selo: 'NVIDIA', grupo: 'nuvem', midias: [] },
   { valor: 'phi-3-mini', rotulo: 'Phi-3', nome: 'Phi-3 Mini', descricao: 'Processamento local eficiente', selo: 'Local', grupo: 'local', midias: [] },
   { valor: 'gemma-2-2b', rotulo: 'Gemma 2', nome: 'Gemma 2 2B', descricao: 'Execução local ultraleve', selo: 'Local', grupo: 'local', midias: [] },
-  { valor: 'qwen', rotulo: 'Qwen 2.5', nome: 'Qwen 2.5 1.5B', descricao: 'SLM local ou remoto via Ollama', selo: 'SLM', grupo: 'local', midias: [] }
+  { valor: 'qwen', rotulo: 'Qwen 2.5', nome: 'Qwen 2.5 1.5B', descricao: 'SLM local ou remoto via Ollama', selo: 'SLM', grupo: 'local', midias: [] },
+  { valor: 'qwen3-4b-rag', rotulo: 'Qwen 3 4B', nome: 'Qwen 3 4B RAG', descricao: 'SLM local ou remoto via Ollama', selo: 'SLM', grupo: 'local', midias: [] }
 ];
 
 export const MODELO_PADRAO = MODELOS[0];

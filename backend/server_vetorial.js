@@ -94,6 +94,7 @@ const groq = new Groq({ apiKey: GROQ_API_KEY || "missing-key" });
 function janelaContexto(modelo) {
     const m = String(modelo || '').toLowerCase();
     if (['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b'].includes(m)) return parseInt(process.env.QWEN_NUM_CTX || '4096', 10);
+    if (['qwen3-4b-rag', 'qwen-4b', 'qwen3:4b', 'qwen2.5-4b-rag', 'qwen2.5-7b-rag'].includes(m)) return parseInt(process.env.QWEN_4B_NUM_CTX || process.env.QWEN_NUM_CTX || '4096', 10);
     if (m === 'phi-3-mini') return 4096;
     if (m === 'gemma-2-2b') return 8192;
     if (m === 'gemini') return 1048576;           // Gemini 2.5 Flash: 1M tokens
@@ -159,7 +160,7 @@ const ehGptOss = (nomeModelo) => /gpt-oss/i.test(String(nomeModelo || ''));
 const padronizarCitacoes = (texto) => String(texto).replace(/【/g, '[').replace(/】/g, ']');
 
 // Modelos locais (Ollama) respondem com até 1.536 tokens; os de nuvem, até 4.096
-const MODELOS_LOCAIS = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'phi-3-mini', 'gemma-2-2b', 'gemma'];
+const MODELOS_LOCAIS = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'qwen3-4b-rag', 'qwen-4b', 'qwen3:4b', 'qwen2.5-4b-rag', 'qwen2.5-7b-rag', 'phi-3-mini', 'gemma-2-2b', 'gemma'];
 const reservaResposta = (modelo) => (MODELOS_LOCAIS.includes(String(modelo || '').toLowerCase()) ? 1536 : 4096);
 
 function calcularUsoContexto(tokensUsados, maxContexto = 4096) {
@@ -683,6 +684,29 @@ app.post('/chat', async (req, res) => {
             }
             modeloIdentificado = "Qwen 2.5 1.5B (Local Ollama)";
 
+        } else if (modelo === 'qwen3-4b-rag' || modelo === 'qwen-4b' || modelo === 'qwen3:4b' || modelo === 'qwen2.5-4b-rag' || modelo === 'qwen2.5-7b-rag') {
+            const endpointQwen4b = process.env.QWEN_4B_ENDPOINT || process.env.QWEN_7B_ENDPOINT || "https://armful-acrobat-rearrange.ngrok-free.dev/v1/chat/completions";
+            const qwen4bModel = process.env.QWEN_4B_MODEL || "qwen3-4b-rag";
+            try {
+                const qwen4bRes = await fetch(endpointQwen4b, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: qwen4bModel,
+                        messages: messagesPayload,
+                        temperature: TEMPERATURA_RAG,
+                        max_tokens: 1536
+                    })
+                });
+                const qwen4bData = await qwen4bRes.json();
+                respostaTexto = qwen4bData?.choices?.[0]?.message?.content || "Sem resposta do Qwen 3 4B RAG (Ollama).";
+                req.tokensIn = qwen4bData?.usage?.prompt_tokens || 0;
+                req.tokensOut = qwen4bData?.usage?.completion_tokens || 0;
+            } catch (err) {
+                respostaTexto = `⚠️ Não foi possível conectar ao Ollama para o modelo Qwen 3 4B RAG em ${endpointQwen4b}. Certifique-se de que o Ollama está ativo.`;
+            }
+            modeloIdentificado = "Qwen 3 4B RAG (Local Ollama)";
+
         } else if (modelo === 'phi-3-mini') {
             const endpointPhi3 = process.env.OLLAMA_ENDPOINT || "http://localhost:11434/v1/chat/completions";
             try {
@@ -742,7 +766,7 @@ app.post('/chat', async (req, res) => {
         const tempoTotalMs = Date.now() - inicioTotal;
 
         // Para SLMs locais (Ollama corta acima de num_ctx), usa o maior entre o real e o enviado; para nuvem usa o usage real da API
-        const isLocalSLM = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'phi-3-mini', 'gemma-2-2b'].includes(String(modelo || '').toLowerCase());
+        const isLocalSLM = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'qwen3-4b-rag', 'qwen-4b', 'qwen3:4b', 'qwen2.5-4b-rag', 'qwen2.5-7b-rag', 'phi-3-mini', 'gemma-2-2b'].includes(String(modelo || '').toLowerCase());
         const promptTokens = isLocalSLM ? Math.max(req.tokensIn || 0, estimarTokens(messagesPayload)) : (req.tokensIn || estimarTokens(messagesPayload));
         const completionTokens = req.tokensOut || estimarTokens(respostaTexto);
         const totalTokens = promptTokens + completionTokens;
@@ -829,6 +853,7 @@ app.post('/chat/stream', async (req, res) => {
         let modeloDisplay = "Groq (openai/gpt-oss-120b)";
         if (modelo === 'gemini') modeloDisplay = "Gemini 2.5 Flash (Google)";
         else if (modelo === 'qwen' || modelo === 'qwen2.5:1.5b' || modelo === 'local' || modelo === 'ic-qwen' || modelo === 'qwen-2.5-1.5b') modeloDisplay = "Qwen 2.5 1.5B (Local Ollama)";
+        else if (modelo === 'qwen3-4b-rag' || modelo === 'qwen-4b' || modelo === 'qwen3:4b' || modelo === 'qwen2.5-4b-rag' || modelo === 'qwen2.5-7b-rag') modeloDisplay = "Qwen 3 4B RAG (Local Ollama)";
         else if (modelo === 'mistral-large' || modelo === 'mistral' || modelo === 'mistral-large-4') modeloDisplay = "Mistral Large 4 (NVIDIA • 1T Multimodal)";
         else if (modelo === 'minimax-m3.1-flash' || modelo === 'minimax' || modelo === 'glm-5.3-flash' || modelo === 'glm' || modelo === 'kimi-3' || modelo === 'kimi' || modelo === 'nvidia') modeloDisplay = "MiniMax M3.1 Flash (NVIDIA)";
         else if (modelo === 'nemotron-3-nano-omni') modeloDisplay = "Nemotron 3 Nano Omni 30B (NVIDIA • Multimodal)";
@@ -1014,6 +1039,10 @@ app.post('/chat/stream', async (req, res) => {
             } else if (modelo === 'gpt-oss-20b') {
                 apiKey = process.env.GPT_OSS_API_KEY || process.env.NVIDIA_API_KEY;
                 modelName = process.env.GPT_OSS_MODEL || "openai/gpt-oss-20b";
+            } else if (modelo === 'qwen3-4b-rag' || modelo === 'qwen-4b' || modelo === 'qwen3:4b' || modelo === 'qwen2.5-4b-rag' || modelo === 'qwen2.5-7b-rag') {
+                apiUrl = process.env.QWEN_4B_ENDPOINT || process.env.QWEN_7B_ENDPOINT || "https://armful-acrobat-rearrange.ngrok-free.dev/v1/chat/completions";
+                apiKey = "ollama";
+                modelName = process.env.QWEN_4B_MODEL || "qwen3-4b-rag";
             } else if (modelo === 'phi-3-mini' || modelo === 'gemma-2-2b' || modelo === 'qwen' || modelo === 'qwen2.5:1.5b' || modelo === 'local' || modelo === 'ic-qwen' || modelo === 'qwen-2.5-1.5b') {
                 apiUrl = process.env.OLLAMA_ENDPOINT || "http://localhost:11434/v1/chat/completions";
                 apiKey = "ollama";
@@ -1123,7 +1152,7 @@ app.post('/chat/stream', async (req, res) => {
 
         // Emite um único evento de usage ao final (real da API ou estimado)
         // SLMs locais truncam acima do num_ctx; modelos em nuvem retornam o usage real exato
-        const isLocalSLM = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'phi-3-mini', 'gemma-2-2b'].includes(String(modelo || '').toLowerCase());
+        const isLocalSLM = ['qwen', 'qwen2.5:1.5b', 'local', 'ic-qwen', 'qwen-2.5-1.5b', 'qwen3-4b-rag', 'qwen-4b', 'qwen3:4b', 'qwen2.5-4b-rag', 'qwen2.5-7b-rag', 'phi-3-mini', 'gemma-2-2b'].includes(String(modelo || '').toLowerCase());
         const promptT = isLocalSLM ? Math.max(streamUsage?.prompt_tokens || 0, estimatedPromptTokens) : (streamUsage?.prompt_tokens || estimatedPromptTokens);
         const complT = streamUsage?.completion_tokens || estimarTokens(streamText);
         const totalT = promptT + complT;
